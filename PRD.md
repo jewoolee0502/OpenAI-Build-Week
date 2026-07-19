@@ -2,7 +2,9 @@
 
 ## 1. Product Summary
 
-ImagineLab is an Android-first mobile platform that lets elementary-school students turn natural-language ideas into small, playable browser games. A student describes a game, the platform generates a self-contained HTML, CSS, and JavaScript game, and the student can continue refining it by chat. When ready, the student publishes the game to a public HTML link hosted by the product's server.
+ImagineLab is an Android-first platform that lets elementary-school students turn natural-language ideas into small, playable browser games. Children use a React Native Expo app designed for phones and tablets. A student describes a game, the platform generates a self-contained HTML, CSS, and JavaScript game, and the student can continue refining it by chat. When ready, the student publishes the game to a public HTML link hosted by the product's server.
+
+A separate responsive parent website shows guardians the child's projects and creative process. It can generate evidence-based AI observations about how a specific project developed, including creative exploration, iteration, problem solving, follow-through, communication, and supported interest signals. These observations are conversation aids, not scores, rankings, diagnoses, or predictions of a child's fixed abilities or potential.
 
 The product introduces young students to creative problem-solving and the core loop of software creation: imagine, build, test, improve, and share. It is inspired by the accessibility of AI creation tools, but its first release is deliberately limited to basic games appropriate for elementary-aged users.
 
@@ -19,6 +21,7 @@ The product also makes the creative process itself part of the learning. As chil
 - Let the child refine an existing game with follow-up natural-language requests.
 - Let the child publish a game to a public, shareable HTML link.
 - Give a linked guardian visibility into their child's projects and development activity.
+- Give a guardian evidence-based, project-specific AI observations and conversation starters.
 - Let anyone with a published game link, including a guardian, play the game without creating an account.
 
 ## 4. Non-goals for the Hackathon MVP
@@ -29,13 +32,20 @@ The product also makes the creative process itself part of the learning. As chil
 - Games beyond a simple single-page HTML/CSS/JavaScript bundle.
 - Teacher/classroom administration features.
 - Payments, subscriptions, or advertising.
+- An open child social network with comments, direct messages, follower counts, or competitive rankings.
+
+### Post-MVP direction
+
+- A moderated project gallery may let children discover and play approved public games.
+- Remixing an approved game may be explored as a learning and inspiration tool.
+- Community identity, publishing approval, moderation, reporting, and guardian controls must be defined before implementation.
 
 ## 5. Users and Roles
 
 | Role | Description | Core capabilities |
 | --- | --- | --- |
 | Child | An elementary-aged student with their own account linked to a guardian. | Create, edit, play, publish, and view their own games. |
-| Guardian | A parent or guardian with an account linked to one or more child accounts. | View their linked child's work and development activity; play any game received through a public link. |
+| Guardian | A parent or guardian with an account linked to one or more child accounts. | View their linked child's work and development activity; generate project-based AI observations; play any game received through a public link. |
 | Public visitor | Anyone opening a published game link. | Play the published game without an account. |
 
 ## 6. MVP User Stories
@@ -44,7 +54,8 @@ The product also makes the creative process itself part of the learning. As chil
 
 - As a child, I can create an account and link it to a guardian account.
 - As a child, I can write an idea such as “make a game where a frog catches flies” and receive a playable game.
-- As a child, I can play my game inside the Android app.
+- As a child, I can hold a talk button, describe a game or change aloud, and receive editable transcribed text.
+- As a child, I can play my game inside the mobile app.
 - As a child, I can ask for a change such as “make it faster” or “add three lives,” then preview the updated game.
 - As a child, I can save a draft game.
 - As a child, I can publish a saved game and copy or share its public link.
@@ -53,6 +64,7 @@ The product also makes the creative process itself part of the learning. As chil
 
 - As a guardian, I can create an account and link it with my child's account.
 - As a guardian, I can see the child's projects and a chronological record of creation and edit events.
+- As a guardian, I can generate an evidence-based AI summary of a project and receive questions I can use to discuss it with my child.
 - As a guardian, I can open a public game link shared with me and play it without being required to sign in.
 
 ### Public visitor
@@ -63,13 +75,14 @@ The product also makes the creative process itself part of the learning. As chil
 
 ### Create and refine a game
 
-1. A child signs in to the Android app.
-2. The child chooses **Create game** and describes an idea in natural language.
-3. The backend generates a basic game as HTML, CSS, and JavaScript.
-4. The app opens a preview in a sandboxed web view.
-5. The child enters an edit request in natural language.
-6. The backend updates the game bundle, saves a new version, and returns a refreshed preview.
-7. The child saves the game as a draft or publishes it.
+1. A child signs in to the Expo mobile app.
+2. The child chooses **Create game** and types an idea or holds the talk button to describe it aloud.
+3. For voice input, the app records until release, the backend transcribes the bounded audio request, and the app places the result in the editable prompt field.
+4. The backend generates a basic game as HTML, CSS, and JavaScript.
+5. The app opens a preview in a sandboxed web view.
+6. The child types or speaks an edit request in natural language.
+7. The backend updates the game bundle, saves a new version, and returns a refreshed preview.
+8. The child saves the game as a draft or publishes it.
 
 ### Publish and play
 
@@ -80,10 +93,11 @@ The product also makes the creative process itself part of the learning. As chil
 
 ### Guardian oversight
 
-1. A guardian signs in to the app.
+1. A guardian signs in to the parent website.
 2. The guardian opens the linked child's profile.
 3. The guardian sees projects, their publish status, and creation/edit activity.
 4. The guardian opens a project preview or a public link.
+5. The guardian requests an AI project insight and sees observations, supporting project evidence, interest signals, and conversation starters.
 
 ## 8. Functional Requirements
 
@@ -99,9 +113,11 @@ The product also makes the creative process itself part of the learning. As chil
 ### Game generation and editing
 
 - Accept a short natural-language game brief.
+- Support push-to-talk input for creation and edit prompts: hold to record, release to transcribe, and keep the resulting text editable before submission.
+- Limit each voice recording to 30 seconds and do not persist the raw audio after transcription.
 - Generate a self-contained, basic HTML/CSS/JavaScript game bundle.
 - Restrict generated games to a documented, safe browser capability set.
-- Display a playable preview in the Android app.
+- Display a playable preview in the Expo mobile app.
 - Persist the source bundle and immutable versions for each generation or edit.
 - Accept natural-language edits against an existing project and return an updated playable version.
 - Show a clear error and allow retry when generation fails.
@@ -120,43 +136,54 @@ The product also makes the creative process itself part of the learning. As chil
 - For each child, list projects and their current status.
 - Display an activity timeline containing at least create, edit, publish, and unpublish events.
 
+### Parent AI project insights
+
+- Generate an insight only for a guardian who is linked to the child who owns the project.
+- Analyze project prompts, immutable version history, and supported activity events; do not infer from unrelated account or personal data.
+- Return a plain-language project summary, two to five supported observation dimensions, possible interest signals, and two to four conversation starters.
+- Attach concrete project evidence to every observation dimension.
+- Use bounded language such as “in this project,” “may suggest,” and “there is not yet enough evidence.”
+- Never score, rank, diagnose, compare with other children, predict a career, or assert fixed traits, intelligence, or potential.
+- Label every report as a project-based observation rather than a psychological or educational assessment.
+
 ## 9. Technical Stack
 
 The selected stack optimizes for a small Android-first hackathon build: one primary language on the backend, managed authentication and data services, a secure server-side boundary for OpenAI, and a straightforward way to serve public game links.
 
 | Area | Selected technology | Why it is selected |
 | --- | --- | --- |
-| Android app | Kotlin, Jetpack Compose | Native Android UI with a fast modern development workflow. |
-| In-app game preview | Android WebView | Runs the generated HTML game inside the app. |
+| Mobile app | React Native, TypeScript, Expo, Expo Router | Android-first delivery with a fast hackathon workflow and one maintainable mobile codebase. |
+| In-app game preview | `react-native-webview` | Runs the generated HTML game inside the Expo app on Android and iOS. |
+| Voice recording | `expo-audio` | Provides Expo Go-compatible microphone recording for bounded push-to-talk requests. |
+| Parent website | React, TypeScript, Vite | Keeps the guardian experience responsive and easy to demo on a laptop without adding parent-only screens to the child app. |
 | Authentication | Firebase Authentication | Supports email/password and Google Sign-In without building authentication infrastructure. |
 | App data | Cloud Firestore | Managed document data for users, guardian links, projects, versions, and activity. |
 | Game bundle storage | Cloud Storage for Firebase | Stores generated HTML/CSS/JavaScript bundles and optional thumbnails. |
 | Backend API | TypeScript, Node.js, Fastify, deployed on Google Cloud Run | Keeps the OpenAI API key off devices; handles generation, authorization, publishing, and public serving. |
-| AI integration | Official OpenAI server SDK using the Responses API | Provides server-side generation and iterative editing behind a single API boundary. The exact model ID must be selected from current official documentation during implementation. |
+| AI integration | Official OpenAI server SDK using the Responses API and Audio Transcriptions API | Provides server-side generation, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
 | Public game delivery | Cloud Run public route plus Cloud Storage | Serves a stable `https://<domain>/g/<slug>` link from the product's own backend while game files remain in managed storage. |
-| Android/backend communication | HTTPS JSON API with Firebase ID tokens | Lets the backend verify the signed-in user and enforce project permissions. |
+| Client/backend communication | HTTPS JSON API with Firebase ID tokens | Lets the backend verify the signed-in user and enforce project permissions for both clients. |
 | Observability | Cloud Logging | Captures backend errors and generation failures for the MVP. |
 | Source control and CI | GitHub and GitHub Actions | Stores source code and runs build/lint/test checks on pull requests. |
 
 ### Architecture
 
 ```text
-Android app (Kotlin / Compose)
-  ├─ Firebase Authentication
-  ├─ Firestore (user-facing project metadata)
-  └─ Cloud Run API (authenticated HTTPS)
-       ├─ verifies Firebase ID token and role/link permissions
-       ├─ calls OpenAI for generation and edits
-       ├─ writes versions/bundles to Firestore + Cloud Storage
-       └─ serves public route: /g/:slug
-            └─ sandboxed browser page loads published game bundle
+Child Expo app (React Native / TypeScript, phone + tablet) ─┐
+Parent website (React / TypeScript / Vite) ─────────────────┼─ Cloud Run API
+                                                           │   ├─ verifies Firebase ID token and role/link permissions
+                                                           │   ├─ calls OpenAI for generation, edits, parent insights, and transcription
+                                                           │   ├─ writes versions/bundles to Firestore + Cloud Storage
+                                                           │   └─ serves public route: /g/:slug
+                                                           │        └─ sandboxed browser page loads published game bundle
+Firebase Authentication ───────────────────────────────────┘
 ```
 
 ### Why this stack, rather than alternatives
 
-- A native Kotlin app is the most direct fit for the Android-only first release.
+- Expo and React Native reduce mobile setup time for the hackathon while keeping Android as the primary launch target and preserving an iOS path from the same codebase.
 - Firebase avoids spending hackathon time building email login, Google login, a database, and file storage from scratch.
-- A TypeScript Cloud Run API creates a hard boundary: the Android client never receives the OpenAI API key and cannot bypass authorization rules.
+- A TypeScript Cloud Run API creates a hard boundary: neither client receives the OpenAI API key or bypasses authorization rules.
 - Generated games remain portable static web artifacts, even though the product serves them through its backend.
 
 ## 10. Data Model (MVP)
@@ -165,30 +192,35 @@ Android app (Kotlin / Compose)
 | --- | --- |
 | `users` | `id`, `role` (`child` or `guardian`), `displayName`, `email`, `createdAt` |
 | `guardianLinks` | `childUserId`, `guardianUserId`, `status`, `createdAt` |
-| `projects` | `id`, `childUserId`, `title`, `status` (`draft` or `published`), `currentVersionId`, `publicSlug`, `createdAt`, `updatedAt` |
+| `projects` | `id`, `childUserId`, `title`, `status` (`draft` or `published`), `currentVersionId`, `publishedVersionId`, `publicSlug`, `createdAt`, `updatedAt` |
 | `projectVersions` | `id`, `projectId`, `versionNumber`, `prompt`, `bundleStoragePath`, `createdAt` |
 | `activityEvents` | `id`, `childUserId`, `projectId`, `type`, `createdAt`, `metadata` |
+| `projectInsights` | `id`, `childUserId`, `projectId`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
 | Cloud Storage game bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
 
 ## 11. Safety and Security Requirements
 
-- Never place the OpenAI API key in the Android app or a public game bundle.
+- Never place the OpenAI API key in the Expo app, parent website, or a public game bundle.
+- Send voice recordings only to the authenticated backend transcription endpoint; do not persist raw child audio in project data or activity history.
 - Require Firebase ID-token verification on every authenticated backend endpoint.
 - Enforce child/guardian/project authorization in the backend; do not rely only on Firestore client rules or UI visibility.
 - Render generated games inside a sandboxed iframe on the public page. The game must not gain access to the parent page, account data, backend credentials, or arbitrary external network destinations.
 - Do not allow generated code to embed secrets or backend credentials.
 - Validate and constrain generated output before saving or publishing it.
 - Record server-side audit events for project creation, edits, publishing, and unpublishing.
+- Treat parent AI insights as sensitive child-related data: authorize them server-side, keep the supporting evidence scoped to the linked child's project, and avoid unsupported developmental claims.
 
 ## 12. Acceptance Criteria
 
-- A child can sign up with email/password or Google, create a game from text, and play it in Android.
+- A child can sign up with email/password or Google, create a game from text, and play it in the Android Expo app.
+- The child can hold a voice button, speak a project or edit request, release, and receive editable transcribed text.
 - The child can submit at least one natural-language edit and see the changed game.
 - The child can save a draft and publish it.
 - A published game opens and plays at a public browser URL without authentication.
-- A guardian linked to the child can sign in and view the child's project list and activity timeline.
+- A guardian linked to the child can sign in to the parent website and view the child's project list and activity timeline.
+- The linked guardian can generate a project insight that includes evidence and conversation starters and clearly states that it is not an assessment.
 - An unrelated signed-in user cannot read or edit the child's project through either the app or backend API.
-- The Android client contains no OpenAI API key.
+- The Expo client contains no OpenAI API key.
 
 ## 13. Open Decisions — Must Be Confirmed Before Implementation
 
@@ -199,15 +231,16 @@ The following are intentionally not assumed in this PRD:
 3. **Public-link controls:** whether a public game can be unlisted, expire, be password-protected, or only be fully public.
 4. **Content policy:** which game themes, language, images, and external links are allowed; what happens when a prompt or generated game is disallowed.
 5. **Minimum child age and geographic launch scope:** required to define the applicable privacy and consent obligations.
-6. **Guardian activity detail:** whether the timeline shows prompts and generated-game versions, or only high-level event names and timestamps.
+6. **Guardian activity detail:** project insight generation may use prompts and versions, but the exact prompt/version evidence displayed to the guardian must be confirmed.
 7. **Game capability limits:** whether generated games may use sound, external images, or network requests.
 
 ## 14. Suggested Hackathon Delivery Order
 
-1. Set up Firebase Authentication, Firestore, Cloud Storage, and the Kotlin Android shell.
+1. Set up Firebase Authentication, Firestore, Cloud Storage, and the React Native Expo shell.
 2. Build child account creation, sign-in, and a project list.
 3. Build the Cloud Run generation endpoint and store a versioned HTML game bundle.
 4. Add WebView preview and natural-language edits.
 5. Add publish/unpublish and the public `/g/:slug` route.
-6. Add guardian linking, dashboard, and activity timeline.
+6. Add the parent website with guardian linking, dashboard, activity timeline, and a project-level AI insight demo.
 7. Add generated-code validation, sandboxing, and end-to-end permission tests.
+8. If time remains, prototype a read-only, moderated community gallery without child-to-child messaging.

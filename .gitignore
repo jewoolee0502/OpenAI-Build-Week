@@ -1,0 +1,22 @@
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Node / backend
+backend/node_modules/
+backend/dist/
+backend/coverage/
+backend/.env
+backend/.data/
+
+# Expo mobile
+mobile/.env
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+
+# Parent web
+parent-web/.env
+parent-web/node_modules/
+parent-web/dist/
