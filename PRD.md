@@ -20,6 +20,7 @@ The product also makes the creative process itself part of the learning. As chil
 - Let the child play the generated game immediately in the app.
 - Let the child refine an existing game with follow-up natural-language requests.
 - Let the child publish a game to a public, shareable HTML link.
+- Give every project a generated square cover image based on its original game idea.
 - Give a linked guardian visibility into their child's projects and development activity.
 - Give a guardian evidence-based, project-specific AI observations and conversation starters.
 - Let anyone with a published game link, including a guardian, play the game without creating an account.
@@ -58,6 +59,7 @@ The product also makes the creative process itself part of the learning. As chil
 - As a child, I can play my game inside the mobile app.
 - As a child, I can ask for a change such as “make it faster” or “add three lives,” then preview the updated game.
 - As a child, I can save a draft game.
+- As a child, each game I create receives its own recognizable cover image.
 - As a child, I can publish a saved game and copy or share its public link.
 
 ### Guardian
@@ -78,8 +80,8 @@ The product also makes the creative process itself part of the learning. As chil
 1. A child signs in to the Expo mobile app.
 2. The child chooses **Create game** and types an idea or holds the talk button to describe it aloud.
 3. For voice input, the app records until release, the backend transcribes the bounded audio request, and the app places the result in the editable prompt field.
-4. The backend generates a basic game as HTML, CSS, and JavaScript.
-5. The app opens a preview in a sandboxed web view.
+4. The backend generates a basic game and a child-safe square project cover concurrently.
+5. The backend stores the game version and cover image, then the app opens a preview in a sandboxed web view.
 6. The child types or speaks an edit request in natural language.
 7. The backend updates the game bundle, saves a new version, and returns a refreshed preview.
 8. The child saves the game as a draft or publishes it.
@@ -125,6 +127,7 @@ The product also makes the creative process itself part of the learning. As chil
 ### Projects and publishing
 
 - List a child's saved projects with title, thumbnail or placeholder, last-updated time, and publish status.
+- Generate one stable project cover from the original child-authored game prompt, store it outside the game bundle, and expose it only through an authorized backend image route.
 - Support draft and published states.
 - Generate a stable public URL for a published project.
 - Serve the latest published version at that URL.
@@ -160,7 +163,7 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 | Authentication and app data | Local PostgreSQL-backed application services | Keeps account, guardian-link, project, version, activity, and insight data in one local relational store. |
 | Game bundle storage | Local PostgreSQL | Stores versioned HTML/CSS/JavaScript bundles with their project-version records for the MVP. |
 | Backend API | TypeScript, Node.js, Fastify | Keeps the OpenAI API key off devices; handles generation, authorization, publishing, and public serving. |
-| AI integration | Official OpenAI server SDK using the Responses API and Audio Transcriptions API | Provides server-side generation, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
+| AI integration | Official OpenAI server SDK using the Responses API, Image API, and Audio Transcriptions API | Provides server-side games, project covers, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
 | Public game delivery | Fastify public route | Serves a stable `https://<domain>/g/<slug>` link from the product's own backend. |
 | Client/backend communication | HTTPS JSON API with application authentication | Lets the backend authenticate the signed-in user and enforce project permissions for both clients. |
 | Observability | Cloud Logging | Captures backend errors and generation failures for the MVP. |
@@ -172,8 +175,8 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 Child Expo app (React Native / TypeScript, phone + tablet) ─┐
 Parent website (React / TypeScript / Vite) ─────────────────┼─ Fastify API
                                                            │   ├─ authenticates requests and enforces role/link permissions
-                                                           │   ├─ calls OpenAI for generation, edits, parent insights, and transcription
-                                                           │   ├─ writes versions/bundles to local PostgreSQL
+                                                           │   ├─ calls OpenAI for games, project covers, edits, parent insights, and transcription
+                                                           │   ├─ writes versions, bundles, and project-cover bytes to local PostgreSQL
                                                            │   └─ serves public route: /g/:slug
                                                            │        └─ sandboxed browser page loads published game bundle
 Local PostgreSQL ───────────────────────────────────────────┘
@@ -194,6 +197,7 @@ Local PostgreSQL ─────────────────────
 | `guardianLinks` | `childUserId`, `guardianUserId`, `status`, `createdAt` |
 | `projects` | `id`, `childUserId`, `title`, `status` (`draft` or `published`), `currentVersionId`, `publishedVersionId`, `publicSlug`, `createdAt`, `updatedAt` |
 | `projectVersions` | `id`, `projectId`, `versionNumber`, `prompt`, `bundleStoragePath`, `createdAt` |
+| `projectProfileImages` | `id`, `projectId`, `sourcePrompt`, `mimeType`, `imageData`, `provider`, `model`, `fallbackReason`, `createdAt` |
 | `activityEvents` | `id`, `childUserId`, `projectId`, `type`, `createdAt`, `metadata` |
 | `childInsights` | `id`, `childUserId`, `scope`, `sourceProjectIds`, `sourceVersionIds`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
 | PostgreSQL project bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
@@ -207,6 +211,7 @@ Local PostgreSQL ─────────────────────
 - Render generated games inside a sandboxed iframe on the public page. The game must not gain access to the parent page, account data, backend credentials, or arbitrary external network destinations.
 - Do not allow generated code to embed secrets or backend credentials.
 - Validate and constrain generated output before saving or publishing it.
+- Keep generated project covers separate from executable game bundles, retain provider moderation, and serve covers with a fixed image MIME type, private caching, and `nosniff` protection.
 - Record server-side audit events for project creation, edits, publishing, and unpublishing.
 - Treat parent AI insights as sensitive child-related data: authorize them server-side, keep supporting evidence scoped to the linked child's portfolio, and avoid unsupported developmental claims.
 
@@ -216,6 +221,7 @@ Local PostgreSQL ─────────────────────
 - The child can hold a voice button, speak a project or edit request, release, and receive editable transcribed text.
 - The child can submit at least one natural-language edit and see the changed game.
 - The child can save a draft and publish it.
+- Every newly created project has a stored profile image and an authenticated profile-image URL; a safe local placeholder is used if image generation is unavailable or blocked.
 - A published game opens and plays at a public browser URL without authentication.
 - A guardian linked to the child can sign in to the parent website and view the child's project list and activity timeline.
 - The linked guardian can generate one child-level insight across the child's available portfolio that includes project evidence and conversation starters and clearly states that it is not an assessment.

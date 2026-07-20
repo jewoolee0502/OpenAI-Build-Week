@@ -16,6 +16,8 @@ evidence-based creative-practice insights.
 - Local PostgreSQL storage for accounts, sessions, guardian links, projects, immutable versions,
   activities, creative-process events, insights, and radar evidence snapshots.
 - Prompt-to-game creation, iterative edits, draft/publish/unpublish, public links, and speech-to-text.
+- Automatic square project-cover generation through the OpenAI Image API, with PostgreSQL byte
+  storage and a deterministic local SVG fallback.
 - Separate Parent Portal Portfolio, Activity, and Insights pages.
 - An accessible child-level, six-axis Creative Practice Radar backed by `0–4` evidence states and
   concrete evidence across the available portfolio, never peer comparison or a fixed-ability score.
@@ -38,9 +40,10 @@ npm run db:migrate
 npm run dev
 ```
 
-The API starts at `http://localhost:8080`. With no OpenAI key, game generation and Insights use
-deterministic local demo output. Voice transcription requires `OPENAI_API_KEY`; raw child audio is
-never retained.
+The API starts at `http://localhost:8080`. With no OpenAI key, game generation, project covers, and
+Insights use deterministic local demo output. Set `OPENAI_IMAGE_MODEL` to override the default
+`gpt-image-2` cover model. Voice transcription requires `OPENAI_API_KEY`; raw child audio is never
+retained.
 
 Optional local seed:
 

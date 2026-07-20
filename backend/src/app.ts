@@ -16,6 +16,7 @@ import {
   linkChildBodySchema,
 } from "./domain.js";
 import { GenerationService } from "./generation.js";
+import { ProjectImageService } from "./project-image.js";
 import { renderPublicGamePage, UnsafeGameBundleError } from "./safety.js";
 import { type ApplicationStore, PostgresStore } from "./store.js";
 
@@ -73,6 +74,7 @@ export interface AppDependencies {
   store?: ApplicationStore;
   database?: Database;
   generation?: GenerationService;
+  projectImages?: ProjectImageService;
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
@@ -84,6 +86,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   if (ownedDatabase && config.autoMigrate) await ownedDatabase.migrate();
   const store = dependencies.store ?? new PostgresStore(ownedDatabase!);
   const generation = dependencies.generation ?? new GenerationService(config);
+  const projectImages = dependencies.projectImages ?? new ProjectImageService(config);
   const auth = new AuthService(config, store);
 
   if (ownedDatabase && !dependencies.database) {
@@ -247,12 +250,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const actor = await user(request);
     requireRole(actor, "child");
     const body = createProjectBodySchema.parse(request.body);
-    const generated = await generation.createGame(body.prompt, actor.id);
+    const [generated, profileImage] = await Promise.all([
+      generation.createGame(body.prompt, actor.id),
+      projectImages.generate({ childUserId: actor.id, projectPrompt: body.prompt }),
+    ]);
+    if (profileImage.fallbackReason) {
+      app.log.warn(
+        { reason: profileImage.fallbackReason },
+        "Project profile image used the local fallback",
+      );
+    }
     const project = await store.createProject({
       childUserId: actor.id,
       title: generated.title,
       prompt: body.prompt,
       html: generated.html,
+      profileImage,
     });
     return reply.status(201).send({ project, generation: { provider: generated.provider, summary: generated.childFacingSummary } });
   });
@@ -268,6 +281,34 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       versions: await store.getVersions(project.id),
       activities: await store.getActivities(actor.id, project.id),
     };
+  });
+
+  app.get("/api/projects/:projectId/profile-image", async (request, reply) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+
+    const canView =
+      (actor.role === "child" && actor.id === project.childUserId) ||
+      (actor.role === "guardian" &&
+        (await store.isGuardianLinked(actor.id, project.childUserId)));
+    if (!canView) {
+      const error = new Error("You do not have access to this project");
+      Object.assign(error, { statusCode: 403 });
+      throw error;
+    }
+
+    const image = await store.getProjectProfileImage(projectId);
+    if (!image) throw notFound("Project profile image not found");
+    return reply
+      .header("Cache-Control", "private, max-age=3600")
+      .header("Content-Disposition", "inline")
+      .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+      .header("ETag", `"${image.id}"`)
+      .header("X-Content-Type-Options", "nosniff")
+      .type(image.mimeType)
+      .send(image.data);
   });
 
   app.post("/api/projects/:projectId/edits", async (request, reply) => {

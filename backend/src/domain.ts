@@ -61,8 +61,21 @@ export interface Project {
   currentVersionId: string;
   publishedVersionId: string | null;
   publicSlug: string | null;
+  profileImageUrl: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectProfileImage {
+  id: string;
+  projectId: string;
+  sourcePrompt: string;
+  mimeType: "image/webp" | "image/svg+xml";
+  data: Buffer;
+  provider: "openai" | "demo";
+  model: string;
+  fallbackReason: "moderation_blocked" | "provider_error" | null;
+  createdAt: string;
 }
 
 export interface ActivityEvent {

@@ -20,6 +20,7 @@ describe("ImagineLab API", () => {
       databaseUrl: testDatabaseUrl,
       autoMigrate: true,
       openAiModel: "gpt-5.6",
+      openAiImageModel: "gpt-image-2",
       openAiTranscriptionModel: "gpt-4o-mini-transcribe",
       allowedOrigins: ["http://localhost:3000"],
     };
@@ -76,6 +77,72 @@ describe("ImagineLab API", () => {
     );
     expect(publicResponse.body).toContain('sandbox="allow-scripts"');
     expect(publicResponse.body).toContain("Made with ImagineLab");
+  });
+
+  it("creates every project with a stable profile-image URL", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A fox follows fireflies through a crystal forest" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = response.json().project;
+    expect(project.profileImageUrl).toBe(`/api/projects/${project.id}/profile-image`);
+  });
+
+  it("serves the stored project profile image to its child owner", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A whale carries a tiny garden across the clouds" },
+    });
+    const projectId = created.json().project.id as string;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: childHeaders(childToken),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/svg+xml");
+    expect(response.headers["cache-control"]).toContain("private");
+    expect(response.rawPayload.toString("utf8")).toContain("<svg");
+  });
+
+  it("allows only the owner or a linked guardian to read a project profile image", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A moon rabbit sorts colorful comets" },
+    });
+    const projectId = created.json().project.id as string;
+    const linkedGuardian = await registerGuardian(app, "image-linked@example.com");
+    const unlinkedGuardian = await registerGuardian(app, "image-unlinked@example.com");
+
+    const denied = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: { cookie: unlinkedGuardian.cookie },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: linkedGuardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+    const allowed = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: { cookie: linkedGuardian.cookie },
+    });
+    expect(allowed.statusCode).toBe(200);
   });
 
   it("accepts a child push-to-talk recording and returns its transcript", async () => {

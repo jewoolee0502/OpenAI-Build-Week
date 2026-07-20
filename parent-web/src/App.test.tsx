@@ -31,6 +31,93 @@ describe('Parent Portal', () => {
     expect(await screen.findByRole('heading', { name: "Maya's worlds" })).toBeInTheDocument();
   });
 
+  it('switches children from a header menu that also contains the Child ID form', async () => {
+    const leo = {
+      ...child,
+      id: '77777777-7777-4777-8777-777777777777',
+      displayName: 'Leo',
+      childId: 'KID-EFGH-6789',
+    };
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/guardian/children')) {
+        return jsonResponse({ children: [child, leo] });
+      }
+      if (url.endsWith(`/api/guardian/children/${leo.id}/projects`)) {
+        return jsonResponse({ projects: [], activities: [] });
+      }
+      return parentApiFixture(input);
+    }));
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const childMenu = await screen.findByRole('button', {
+      name: /switch or connect child.*maya/i,
+    });
+    expect(screen.queryByText('CONNECT A CHILD')).not.toBeInTheDocument();
+
+    await user.click(childMenu);
+
+    expect(screen.getByRole('heading', { name: 'Switch child' })).toBeInTheDocument();
+    expect(screen.getByText('CONNECT A CHILD')).toBeInTheDocument();
+    expect(screen.getByText('Enter the Child ID shown in the ImagineLab app.')).toBeInTheDocument();
+    expect(
+      screen.getByText("The ID looks like KID-ABCD-2345. It is not the child's private login token."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Child ID')).toHaveAttribute('placeholder', 'KID-ABCD-2345');
+
+    await user.click(screen.getByRole('button', { name: /switch to leo/i }));
+
+    expect(
+      await screen.findByRole('button', { name: /switch or connect child.*leo/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('CONNECT A CHILD')).not.toBeInTheDocument();
+  });
+
+  it('connects a new child from the header and selects the child', async () => {
+    const nova = {
+      ...child,
+      id: '88888888-8888-4888-8888-888888888888',
+      displayName: 'Nova',
+      childId: 'KID-WXYZ-6789',
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/guardian/children/link') && init?.method === 'POST') {
+        return jsonResponse({ child: nova });
+      }
+      if (url.endsWith(`/api/guardian/children/${nova.id}/projects`)) {
+        return jsonResponse({ projects: [], activities: [] });
+      }
+      return parentApiFixture(input);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', {
+      name: /switch or connect child.*maya/i,
+    }));
+    await user.type(screen.getByLabelText('Child ID'), 'kid-wxyz-6789');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8080/api/guardian/children/link',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ childId: 'KID-WXYZ-6789' }),
+        }),
+      );
+    });
+    expect(
+      await screen.findByRole('button', { name: /switch or connect child.*nova/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('CONNECT A CHILD')).not.toBeInTheDocument();
+  });
+
   it('shows the immutable version history in a project drawer', async () => {
     vi.stubGlobal('fetch', vi.fn(parentApiFixture));
     const user = userEvent.setup();

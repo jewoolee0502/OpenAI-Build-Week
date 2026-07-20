@@ -16,6 +16,7 @@ describe("ImagineLab account flows", () => {
       databaseUrl: testDatabaseUrl,
       autoMigrate: true,
       openAiModel: "gpt-5.6",
+      openAiImageModel: "gpt-image-2",
       openAiTranscriptionModel: "gpt-4o-mini-transcribe",
       allowedOrigins: ["http://localhost:5173"],
     };

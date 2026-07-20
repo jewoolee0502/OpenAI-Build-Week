@@ -160,7 +160,7 @@ function Portal({ guardian, onSignedOut }: { guardian: GuardianUser; onSignedOut
   const [dashboard, setDashboard] = useState<GuardianDashboard>(emptyDashboard);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [childMenuOpen, setChildMenuOpen] = useState(false);
 
   const selectedChild = useMemo(
     () => children?.find((child) => child.id === selectedChildId) ?? null,
@@ -173,7 +173,7 @@ function Portal({ guardian, onSignedOut }: { guardian: GuardianUser; onSignedOut
       const linkedChildren = await parentApi.listChildren();
       setChildren(linkedChildren);
       setSelectedChildId((current) => current ?? linkedChildren[0]?.id ?? null);
-      if (linkedChildren.length === 0) setShowLinkForm(true);
+      if (linkedChildren.length === 0) setChildMenuOpen(true);
     } catch (loadError) {
       setError(messageFrom(loadError));
       setChildren([]);
@@ -234,41 +234,38 @@ function Portal({ guardian, onSignedOut }: { guardian: GuardianUser; onSignedOut
           ))}
         </nav>
         <div className="account-actions">
-          {children && children.length > 0 ? (
-            <select
-              aria-label="Linked child"
-              onChange={(event) => setSelectedChildId(event.target.value)}
-              value={selectedChildId ?? ''}
-            >
-              {children.map((child) => (
-                <option key={child.id} value={child.id}>{child.displayName}</option>
-              ))}
-            </select>
-          ) : null}
-          <button className="avatar-button" onClick={() => setShowLinkForm(true)} type="button">
-            <span aria-hidden="true">👨‍👩‍👧</span>
-            <span>{guardian.displayName}</span>
+          <ChildSwitcher
+            linkedChildren={children ?? []}
+            onLinked={(child) => {
+              setChildren((current) => [...(current ?? []), child]);
+              setSelectedChildId(child.id);
+              setChildMenuOpen(false);
+            }}
+            onOpenChange={setChildMenuOpen}
+            onSelect={(childId) => {
+              setSelectedChildId(childId);
+              setChildMenuOpen(false);
+            }}
+            open={childMenuOpen}
+            selectedChild={selectedChild}
+          />
+          <button
+            aria-label={`Sign out ${guardian.displayName}`}
+            className="quiet-button sign-out-button"
+            onClick={() => void signOut()}
+            type="button"
+          >
+            Sign out
           </button>
-          <button className="quiet-button" onClick={() => void signOut()} type="button">Sign out</button>
         </div>
       </header>
 
       {error ? <ErrorNotice message={error} /> : null}
-      {showLinkForm ? (
-        <LinkChildPanel
-          onClose={children && children.length > 0 ? () => setShowLinkForm(false) : undefined}
-          onLinked={(child) => {
-            setChildren((current) => [...(current ?? []), child]);
-            setSelectedChildId(child.id);
-            setShowLinkForm(false);
-          }}
-        />
-      ) : null}
 
       <main className="portal-main">
         {children === undefined || loadingDashboard ? <PageLoader /> : null}
-        {children?.length === 0 && !showLinkForm ? (
-          <EmptyChildren onLink={() => setShowLinkForm(true)} />
+        {children?.length === 0 ? (
+          <EmptyChildren onLink={() => setChildMenuOpen(true)} />
         ) : null}
         {selectedChild && !loadingDashboard ? (
           page === 'portfolio' ? (
@@ -296,11 +293,107 @@ function Brand() {
   );
 }
 
+function ChildSwitcher({
+  linkedChildren,
+  onLinked,
+  onOpenChange,
+  onSelect,
+  open,
+  selectedChild,
+}: {
+  linkedChildren: LinkedChild[];
+  onLinked: (child: LinkedChild) => void;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (childId: string) => void;
+  open: boolean;
+  selectedChild: LinkedChild | null;
+}) {
+  const currentName = selectedChild?.displayName ?? 'No child selected';
+
+  return (
+    <div className="child-switcher">
+      <button
+        aria-controls="child-switcher-popover"
+        aria-expanded={open}
+        aria-label={`Switch or connect child. Current child: ${currentName}`}
+        className="child-switcher-trigger"
+        onClick={() => onOpenChange(!open)}
+        type="button"
+      >
+        <span className="child-avatar" aria-hidden="true">
+          {selectedChild ? selectedChild.displayName.charAt(0).toUpperCase() : '+'}
+        </span>
+        <span className="child-trigger-copy">
+          <small>{selectedChild ? 'Viewing' : 'Parent portal'}</small>
+          <strong>{selectedChild?.displayName ?? 'Connect a child'}</strong>
+        </span>
+        <svg aria-hidden="true" className="child-trigger-chevron" viewBox="0 0 20 20">
+          <path d="m5 7.5 5 5 5-5" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          className="child-switcher-popover"
+          id="child-switcher-popover"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') onOpenChange(false);
+          }}
+        >
+          {linkedChildren.length > 0 ? (
+            <section className="linked-children" aria-labelledby="switch-child-title">
+              <div className="popover-heading-row">
+                <div>
+                  <p className="eyebrow">YOUR CHILDREN</p>
+                  <h2 id="switch-child-title">Switch child</h2>
+                </div>
+                <span>{linkedChildren.length} connected</span>
+              </div>
+              <div className="linked-child-options">
+                {linkedChildren.map((child) => {
+                  const selected = child.id === selectedChild?.id;
+                  return (
+                    <button
+                      aria-label={`Switch to ${child.displayName}`}
+                      aria-pressed={selected}
+                      className="linked-child-option"
+                      key={child.id}
+                      onClick={() => onSelect(child.id)}
+                      type="button"
+                    >
+                      <span className="linked-child-avatar" aria-hidden="true">
+                        {child.displayName.charAt(0).toUpperCase()}
+                      </span>
+                      <span>
+                        <strong>{child.displayName}</strong>
+                        <small>{child.childId}</small>
+                      </span>
+                      <span className="child-option-state">{selected ? 'Viewing' : 'View'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : (
+            <div className="no-linked-children">
+              <span aria-hidden="true">✦</span>
+              <strong>Connect your first child</strong>
+              <p>Their ImagineLab projects will appear here.</p>
+            </div>
+          )}
+
+          <LinkChildPanel onClose={() => onOpenChange(false)} onLinked={onLinked} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LinkChildPanel({
   onClose,
   onLinked,
 }: {
-  onClose?: () => void;
+  onClose: () => void;
   onLinked: (child: LinkedChild) => void;
 }) {
   const [childId, setChildId] = useState('');
@@ -321,29 +414,31 @@ function LinkChildPanel({
   }, [childId, onLinked]);
 
   return (
-    <section className="link-panel" aria-labelledby="link-title">
-      <div>
-        <p className="eyebrow">CONNECT A CHILD</p>
-        <h2 id="link-title">Enter the Child ID shown in the ImagineLab app.</h2>
-        <p>The ID looks like KID-ABCD-2345. It is not the child&apos;s private login token.</p>
-      </div>
+    <section className="link-child-form" aria-labelledby="link-title">
+      <p className="eyebrow">CONNECT A CHILD</p>
+      <h3 id="link-title">Enter the Child ID shown in the ImagineLab app.</h3>
+      <p className="link-child-help">
+        The ID looks like KID-ABCD-2345. It is not the child&apos;s private login token.
+      </p>
       <form onSubmit={(event) => void submit(event)}>
         <label htmlFor="child-id">Child ID</label>
-        <div className="inline-form">
-          <input
-            id="child-id"
-            onChange={(event) => setChildId(event.target.value)}
-            pattern="KID-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}"
-            placeholder="KID-ABCD-2345"
-            required
-            value={childId}
-          />
+        <input
+          autoCapitalize="characters"
+          autoComplete="off"
+          id="child-id"
+          onChange={(event) => setChildId(event.target.value.toUpperCase())}
+          pattern="KID-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}"
+          placeholder="KID-ABCD-2345"
+          required
+          value={childId}
+        />
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        <div className="link-child-actions">
           <button className="primary-button" disabled={submitting} type="submit">
             {submitting ? 'Connecting…' : 'Connect'}
           </button>
-          {onClose ? <button className="quiet-button" onClick={onClose} type="button">Cancel</button> : null}
+          <button className="quiet-button" onClick={onClose} type="button">Cancel</button>
         </div>
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
       </form>
     </section>
   );
