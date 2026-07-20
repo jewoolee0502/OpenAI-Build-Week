@@ -14,16 +14,16 @@ Read `PRD.md` before making product or architecture decisions. It is the source 
 
 - Mobile: React Native + TypeScript + Expo, Android-first; preview games with `react-native-webview`.
 - Parent portal: React + TypeScript + Vite responsive website.
-- Auth, data, storage: Firebase Authentication, Cloud Firestore, Cloud Storage.
-- Backend: TypeScript/Node.js/Fastify on Cloud Run.
+- Auth, data, storage: local PostgreSQL-backed application services.
+- Backend: TypeScript/Node.js/Fastify.
 - AI: OpenAI server SDK, Responses API, and Audio Transcriptions API, called only by the backend.
-- Public games: Cloud Run route (`/g/:slug`) serving a game bundle from Cloud Storage.
+- Public games: Fastify route (`/g/:slug`) serving a published game bundle.
 
 ## Non-negotiable Constraints
 
-- Never put an OpenAI API key, Firebase admin credential, or any secret in the Expo app, parent website, a game bundle, or client-visible source.
+- Never put an OpenAI API key, PostgreSQL credential, or any secret in the Expo app, parent website, a game bundle, or client-visible source.
 - Route child voice recordings through the authenticated backend and do not retain raw audio after transcription.
-- Authenticate backend requests with Firebase ID tokens and enforce child/guardian/project permissions server-side.
+- Authenticate backend requests and enforce child/guardian/project permissions server-side.
 - A child can access only their own projects; a guardian only their linked children's projects; public visitors only published game artifacts.
 - Treat generated HTML/JS as untrusted. Validate it before saving/publishing and isolate it from the parent page, account data, credentials, and arbitrary external network access.
 - Version every generated or edited project bundle; retain activity events for create, edit, publish, and unpublish.

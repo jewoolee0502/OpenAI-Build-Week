@@ -26,7 +26,6 @@ describe("ImagineLab API", () => {
       port: 8080,
       publicBaseUrl: "http://localhost:8080",
       dataFile: join(temporaryDirectory, "database.json"),
-      authMode: "dev",
       openAiModel: "gpt-5.6",
       openAiTranscriptionModel: "gpt-4o-mini-transcribe",
       allowedOrigins: ["http://localhost:3000"],
