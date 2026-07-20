@@ -31,6 +31,7 @@ Analyze only the supplied project prompts and version history. Use tentative lan
 Never score, rank, diagnose, compare with other children, predict a career, or claim a fixed trait or ability.
 Each observation must cite concrete evidence from the project history.
 Focus on creative exploration, iteration, problem solving, systems thinking, follow-through, communication, and recurring interests when supported.
+Return all six creative-practice radar dimensions in the required order. A level is an evidence state, not an ability score: 0 Not enough evidence, 1 Emerging, 2 Demonstrated, 3 Repeated, 4 Sustained. The label must match the level. Use 0 when the history does not support a dimension instead of inventing evidence.
 Conversation starters should help the parent invite the child to explain their choices without testing or judging them.
 The disclaimer must say this is a project-based observation, not a psychological or educational assessment.`;
 
@@ -197,6 +198,83 @@ export class GenerationService {
       ],
       disclaimer:
         "This is a project-based observation intended to support conversation. It is not a psychological, educational, or skills assessment.",
+      radar: {
+        rubricVersion: "creative-practice-v1",
+        dimensions: [
+          radarDimension(
+            "imagination",
+            2,
+            "The child turned an original idea into a playable world in this project.",
+            `The project began with: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "expression",
+            1,
+            "The initial request communicates a theme and desired experience.",
+            `The child described: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "game_design",
+            1,
+            "The request includes an interactive goal that can guide a player.",
+            `The game request was: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "experimentation",
+            versions.length > 1 ? 2 : 0,
+            versions.length > 1
+              ? "The child tried at least one alternative through a later version."
+              : "There is not yet enough project evidence about trying alternatives.",
+            versions.length > 1
+              ? `The project has ${versions.length} saved versions.`
+              : "Only the first saved version is available.",
+          ),
+          radarDimension(
+            "iteration",
+            versions.length > 2 ? 3 : versions.length > 1 ? 2 : 0,
+            versions.length > 1
+              ? "The child returned to change the game after its first version."
+              : "There is not yet enough project evidence about iteration.",
+            `The project has ${versions.length} saved version(s).`,
+          ),
+          radarDimension(
+            "reflection",
+            0,
+            "There is not yet enough child-authored reflection in this project.",
+            "No child-authored reflection has been saved yet.",
+          ),
+        ],
+      },
     };
   }
+}
+
+function radarDimension<
+  Key extends
+    | "imagination"
+    | "expression"
+    | "game_design"
+    | "experimentation"
+    | "iteration"
+    | "reflection",
+>(
+  key: Key,
+  level: 0 | 1 | 2 | 3 | 4,
+  observation: string,
+  evidence: string,
+): {
+  key: Key;
+  level: 0 | 1 | 2 | 3 | 4;
+  label: "Not enough evidence" | "Emerging" | "Demonstrated" | "Repeated" | "Sustained";
+  observation: string;
+  evidence: string[];
+} {
+  const labels = [
+    "Not enough evidence",
+    "Emerging",
+    "Demonstrated",
+    "Repeated",
+    "Sustained",
+  ] as const;
+  return { key, level, label: labels[level], observation, evidence: [evidence] };
 }

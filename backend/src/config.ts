@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -6,7 +5,14 @@ const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:8080"),
-  DATA_FILE: z.string().default(".data/imaginelab.json"),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .default("postgres://imaginelab:imaginelab_local@localhost:5432/imaginelab"),
+  AUTO_MIGRATE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.6"),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
@@ -20,7 +26,8 @@ export interface AppConfig {
   host: string;
   port: number;
   publicBaseUrl: string;
-  dataFile: string;
+  databaseUrl: string;
+  autoMigrate: boolean;
   openAiApiKey?: string;
   openAiModel: string;
   openAiTranscriptionModel: string;
@@ -34,7 +41,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     host: env.HOST,
     port: env.PORT,
     publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/$/, ""),
-    dataFile: resolve(process.cwd(), env.DATA_FILE),
+    databaseUrl: env.DATABASE_URL,
+    autoMigrate: env.AUTO_MIGRATE,
     openAiModel: env.OPENAI_MODEL,
     openAiTranscriptionModel: env.OPENAI_TRANSCRIPTION_MODEL,
     allowedOrigins: env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()),

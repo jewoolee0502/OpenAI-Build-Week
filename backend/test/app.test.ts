@@ -1,48 +1,44 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 import { GenerationService } from "../src/generation.js";
-
-const childHeaders = {
-  "x-demo-user-id": "demo-child",
-  "x-demo-role": "child",
-  "content-type": "application/json",
-};
+import { resetTestDatabase, testDatabaseUrl } from "./test-database.js";
 
 describe("ImagineLab API", () => {
   let app: FastifyInstance;
   let config: AppConfig;
-  let temporaryDirectory: string;
+  let childToken: string;
+  let childUserId: string;
 
   beforeEach(async () => {
-    temporaryDirectory = await mkdtemp(join(tmpdir(), "imaginelab-test-"));
     config = {
       nodeEnv: "test",
       host: "127.0.0.1",
       port: 8080,
       publicBaseUrl: "http://localhost:8080",
-      dataFile: join(temporaryDirectory, "database.json"),
+      databaseUrl: testDatabaseUrl,
+      autoMigrate: true,
       openAiModel: "gpt-5.6",
       openAiTranscriptionModel: "gpt-4o-mini-transcribe",
       allowedOrigins: ["http://localhost:3000"],
     };
     app = await buildApp({ config });
+    await resetTestDatabase();
+    const guest = await createGuest(app);
+    childToken = guest.token;
+    childUserId = guest.user.id;
   });
 
   afterEach(async () => {
     await app.close();
-    await rm(temporaryDirectory, { recursive: true, force: true });
   });
 
   it("creates, edits, and publishes a playable project", async () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/projects",
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { prompt: "A frog catches glowing stars" },
     });
     expect(createResponse.statusCode).toBe(201);
@@ -53,7 +49,7 @@ describe("ImagineLab API", () => {
     const editResponse = await app.inject({
       method: "POST",
       url: `/api/projects/${created.project.id}/edits`,
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { instruction: "Make it faster and give me three lives" },
     });
     expect(editResponse.statusCode).toBe(201);
@@ -62,7 +58,7 @@ describe("ImagineLab API", () => {
     const publishResponse = await app.inject({
       method: "POST",
       url: `/api/projects/${created.project.id}/publish`,
-      headers: { "x-demo-user-id": "demo-child", "x-demo-role": "child" },
+      headers: { authorization: `Bearer ${childToken}` },
     });
     expect(publishResponse.statusCode).toBe(200);
     const published = publishResponse.json();
@@ -91,8 +87,7 @@ describe("ImagineLab API", () => {
       method: "POST",
       url: "/api/transcriptions",
       headers: {
-        "x-demo-user-id": "demo-child",
-        "x-demo-role": "child",
+        authorization: `Bearer ${childToken}`,
         "content-type": `multipart/form-data; boundary=${boundary}`,
       },
       payload,
@@ -103,13 +98,13 @@ describe("ImagineLab API", () => {
   });
 
   it("prevents a guardian from uploading a child's voice recording", async () => {
+    const guardian = await registerGuardian(app, "voice-parent@example.com");
     const { boundary, payload } = audioUpload();
     const response = await app.inject({
       method: "POST",
       url: "/api/transcriptions",
       headers: {
-        "x-demo-user-id": "demo-guardian",
-        "x-demo-role": "guardian",
+        cookie: guardian.cookie,
         "content-type": `multipart/form-data; boundary=${boundary}`,
       },
       payload,
@@ -122,47 +117,88 @@ describe("ImagineLab API", () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/projects",
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { prompt: "A soccer game with a friendly robot goalie" },
     });
     const projectId = createResponse.json().project.id as string;
 
+    const linkedGuardian = await registerGuardian(app, "linked@example.com");
+    const unlinkedGuardian = await registerGuardian(app, "unlinked@example.com");
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: linkedGuardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+
     const denied = await app.inject({
       method: "POST",
-      url: `/api/guardian/children/demo-child/projects/${projectId}/insight`,
-      headers: { "x-demo-user-id": "unlinked-guardian", "x-demo-role": "guardian" },
+      url: `/api/guardian/children/${childUserId}/projects/${projectId}/insight`,
+      headers: { cookie: unlinkedGuardian.cookie },
     });
     expect(denied.statusCode).toBe(403);
 
     const allowed = await app.inject({
       method: "POST",
-      url: `/api/guardian/children/demo-child/projects/${projectId}/insight`,
-      headers: { "x-demo-user-id": "demo-guardian", "x-demo-role": "guardian" },
+      url: `/api/guardian/children/${childUserId}/projects/${projectId}/insight`,
+      headers: { cookie: linkedGuardian.cookie },
     });
     expect(allowed.statusCode).toBe(201);
     expect(allowed.json().insight.dimensions.length).toBeGreaterThanOrEqual(2);
     expect(allowed.json().insight.disclaimer).toContain("not a psychological");
   });
 
+  it("returns immutable project version history to a linked guardian", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A penguin explores a crystal cave" },
+    });
+    const projectId = createResponse.json().project.id as string;
+    await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/edits`,
+      headers: childHeaders(childToken),
+      payload: { instruction: "Add glowing keys and a friendly dragon" },
+    });
+
+    const guardian = await registerGuardian(app, "versions@example.com");
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: guardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+    const dashboard = await app.inject({
+      method: "GET",
+      url: `/api/guardian/children/${childUserId}/projects`,
+      headers: { cookie: guardian.cookie },
+    });
+
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.json().projects[0].versions.map((version: { versionNumber: number }) => version.versionNumber)).toEqual([1, 2]);
+  });
+
   it("keeps the last published version live until a newer draft is published", async () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/projects",
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { prompt: "A calm moon garden game" },
     });
     const projectId = createResponse.json().project.id as string;
     const publishResponse = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/publish`,
-      headers: { "x-demo-user-id": "demo-child", "x-demo-role": "child" },
+      headers: { authorization: `Bearer ${childToken}` },
     });
     const publicPath = new URL(publishResponse.json().publicUrl).pathname;
 
     const editResponse = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/edits`,
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { instruction: "Make it faster with three lives" },
     });
     expect(editResponse.json().project.status).toBe("published");
@@ -174,7 +210,7 @@ describe("ImagineLab API", () => {
     await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/publish`,
-      headers: { "x-demo-user-id": "demo-child", "x-demo-role": "child" },
+      headers: { authorization: `Bearer ${childToken}` },
     });
     const updatedPublicGame = await app.inject({ method: "GET", url: publicPath });
     expect(updatedPublicGame.body).toContain("Make it faster with three lives");
@@ -182,7 +218,7 @@ describe("ImagineLab API", () => {
     await app.inject({
       method: "DELETE",
       url: `/api/projects/${projectId}/publish`,
-      headers: { "x-demo-user-id": "demo-child", "x-demo-role": "child" },
+      headers: { authorization: `Bearer ${childToken}` },
     });
     const unavailable = await app.inject({ method: "GET", url: publicPath });
     expect(unavailable.statusCode).toBe(404);
@@ -192,19 +228,61 @@ describe("ImagineLab API", () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/projects",
-      headers: childHeaders,
+      headers: childHeaders(childToken),
       payload: { prompt: "A tiny garden game" },
     });
     const projectId = createResponse.json().project.id as string;
 
+    const otherChild = await createGuest(app);
     const response = await app.inject({
       method: "GET",
       url: `/api/projects/${projectId}`,
-      headers: { "x-demo-user-id": "another-child", "x-demo-role": "child" },
+      headers: { authorization: `Bearer ${otherChild.token}` },
     });
     expect(response.statusCode).toBe(403);
   });
 });
+
+function childHeaders(token: string): Record<string, string> {
+  return { authorization: `Bearer ${token}`, "content-type": "application/json" };
+}
+
+async function createGuest(app: FastifyInstance): Promise<{
+  token: string;
+  user: { id: string; childId: string };
+}> {
+  const response = await app.inject({ method: "POST", url: "/api/auth/child/guest" });
+  expect(response.statusCode).toBe(201);
+  return response.json();
+}
+
+async function getMe(
+  app: FastifyInstance,
+  token: string,
+): Promise<{ id: string; childId: string }> {
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/auth/me",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  return response.json().user;
+}
+
+async function registerGuardian(
+  app: FastifyInstance,
+  email: string,
+): Promise<{ cookie: string }> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/auth/guardian/register",
+    headers: { "content-type": "application/json" },
+    payload: { displayName: "Parent", email, password: "build-together-123" },
+  });
+  expect(response.statusCode).toBe(201);
+  const setCookie = response.headers["set-cookie"];
+  const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie)?.split(";")[0] ?? "";
+  return { cookie };
+}
 
 class StubTranscriptionService extends GenerationService {
   public override async transcribeAudio(): Promise<string> {
