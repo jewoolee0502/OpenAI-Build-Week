@@ -71,6 +71,41 @@ describe("ProjectImageService", () => {
     expect(first.data.toString("utf8")).not.toContain("<script>");
   });
 
+  it("requests four compressed scene interpretations in one server-side image call", async () => {
+    let request: ImageGenerateParamsNonStreaming | undefined;
+    const service = new ProjectImageService(loadConfig({ openAiApiKey: "test-key" }), {
+      async generate(input) {
+        request = input;
+        return {
+          created: 1,
+          data: Array.from({ length: 4 }, () => ({ b64_json: webpBytes.toString("base64") })),
+          output_format: "webp",
+          quality: "low",
+          size: "1024x1024",
+        };
+      },
+    });
+
+    const result = await service.generateSceneVariants({
+      childUserId: "11111111-1111-4111-8111-111111111111",
+      projectPrompt: "A bird flies through a friendly forest",
+      canvasSummary: "Background: My forest. Objects: Blue bird near (0.35, 0.40).",
+    });
+
+    expect(result?.images).toHaveLength(4);
+    expect(request).toMatchObject({
+      model: "gpt-image-2",
+      n: 4,
+      size: "1024x1024",
+      quality: "low",
+      output_format: "webp",
+      output_compression: 55,
+      background: "opaque",
+      moderation: "auto",
+    });
+    expect(request?.prompt).toContain("Blue bird");
+  });
+
   it("falls back to a cover image when the provider returns no usable bytes", async () => {
     const service = new ProjectImageService(loadConfig({ openAiApiKey: "test-key" }), {
       async generate() {

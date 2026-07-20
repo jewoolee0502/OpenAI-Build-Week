@@ -60,10 +60,16 @@ export interface GameProject {
   currentVersionId: string;
   publishedVersionId: string | null;
   publicSlug: string | null;
+  profileImageUrl: string;
   createdAt: string;
   updatedAt: string;
   currentVersion: GameVersion;
   builder?: BuilderDraft;
+}
+
+export interface AuthenticatedImageSource {
+  uri: string;
+  headers: { Authorization: string };
 }
 
 export interface GenerationSummary {

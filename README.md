@@ -15,11 +15,13 @@ evidence-based creative-practice insights.
 - Parent email/password registration and login with Argon2id and HttpOnly cookie sessions.
 - Local PostgreSQL storage for accounts, sessions, guardian links, projects, immutable versions,
   activities, creative-process events, insights, and radar evidence snapshots.
-- Prompt-to-game creation, iterative edits, draft/publish/unpublish, public links, and speech-to-text.
+- A guided child workflow: describe an idea, draw and arrange the scene, explain behavior, compare
+  four AI-generated visual directions, choose one, playtest, revise, and publish.
+- Iterative edits, draft/publish/unpublish, public links, and hold-to-talk speech-to-text.
 - Automatic square project-cover generation through the OpenAI Image API, with PostgreSQL byte
   storage and a deterministic local SVG fallback.
 - Separate Parent Portal Portfolio, Activity, and Insights pages.
-- An accessible child-level, six-axis Creative Practice Radar backed by `0–4` evidence states and
+- An accessible child-level, six-part Creative Practice Hexagon backed by `0–4` evidence states and
   concrete evidence across the available portfolio, never peer comparison or a fixed-ability score.
 - Fastify authorization for every child, guardian, project, transcription, and insight request.
 - Server-only OpenAI Responses and Audio Transcriptions APIs. No client receives an OpenAI or
@@ -84,6 +86,11 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`:
 
 On first launch, select **Join as Guest**. The backend creates a private child session and returns a
 Child ID. The Child ID can be shared with a parent; it is not a login credential.
+
+Creating a game is intentionally multi-step rather than one-prompt generation. After the opening
+idea, the child draws and arranges the scene, describes how it should behave, reviews four visual
+directions generated in one server-side image request, and chooses the direction used for the
+playable test build.
 
 In either prompt field, hold **Hold to talk**, speak for up to 30 seconds, and release. The temporary
 recording goes only to the authenticated backend and is deleted from the device cache after the

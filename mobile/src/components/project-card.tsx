@@ -1,98 +1,225 @@
 import { memo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import type { GameProject } from '@/api/types';
-import { MiniBadge } from '@/components/ui';
 import { colors, radii, spacing } from '@/theme';
 
 interface ProjectCardProps {
   project: GameProject;
   onPress: (project: GameProject) => void;
+  imageSource?: ImageSourcePropType | null;
+  variant?: 'featured' | 'compact';
+  style?: object;
 }
 
-const accents = [colors.lavender, colors.coral, colors.mint] as const;
+const palettes = [
+  ['#35258A', '#E76891'],
+  ['#167E64', '#7CCB63'],
+  ['#8D4FB5', '#FF9B78'],
+  ['#205E9D', '#55C1A0'],
+] as const;
 
-export const ProjectCard = memo(function ProjectCard({ project, onPress }: ProjectCardProps) {
-  const accentIndex = (project.id.charCodeAt(0) || 0) % accents.length;
-  const accent = accents[accentIndex] ?? colors.lavender;
+export const ProjectCard = memo(function ProjectCard({
+  project,
+  onPress,
+  imageSource,
+  variant = 'compact',
+  style,
+}: ProjectCardProps) {
+  const palette = palettes[(project.id.charCodeAt(0) || 0) % palettes.length] ?? palettes[0];
+  const featured = variant === 'featured';
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Open ${project.title}`}
       onPress={() => onPress(project)}
-      style={({ pressed }) => [styles.card, pressed ? styles.pressed : null]}>
-      <LinearGradient colors={['#3B326C', '#5B477A']} style={styles.thumbnail}>
-        <Text style={[styles.spark, { color: accent }]}>✦</Text>
+      style={({ pressed }) => [
+        styles.card,
+        featured ? styles.featuredCard : styles.compactCard,
+        style,
+        pressed ? styles.pressed : null,
+      ]}>
+      {featured ? (
+        <View style={styles.featuredHeading}>
+          <View style={styles.featuredHeadingCopy}>
+            <Text numberOfLines={1} style={styles.featuredTitle}>{project.title}</Text>
+            <Text style={styles.featuredSubtitle}>Your latest world</Text>
+          </View>
+          <Text style={styles.more}>•••</Text>
+        </View>
+      ) : null}
+
+      <LinearGradient colors={palette} style={[styles.art, featured ? styles.featuredArt : styles.compactArt]}>
+        {imageSource ? <Image source={imageSource} style={styles.cover} /> : null}
+        <View style={styles.sparkleCloud} pointerEvents="none">
+          <Text style={styles.spark}>✦</Text>
+          <Text style={styles.orbit}>◌</Text>
+        </View>
+        {!featured ? <Text numberOfLines={2} style={styles.compactTitle}>{project.title}</Text> : null}
       </LinearGradient>
 
-      <View style={styles.content}>
-        <Text numberOfLines={2} style={styles.title}>
-          {project.title}
-        </Text>
-        <View style={styles.meta}>
-          <MiniBadge
-            color={project.status === 'published' ? colors.mint : colors.lavender}
-            label={project.status === 'published' ? 'LIVE' : 'DRAFT'}
-          />
-          <Text style={styles.detail}>
-            v{project.currentVersion.versionNumber} · {project.updatedAt.slice(0, 10)}
-          </Text>
+      <View style={[styles.meta, featured ? styles.featuredMeta : null]}>
+        <View style={styles.statusLine}>
+          <View style={[styles.dot, { backgroundColor: project.status === 'published' ? colors.mint : colors.lavender }]} />
+          <Text style={styles.status}>{project.status === 'published' ? 'PUBLISHED' : 'DRAFT'}</Text>
+          <Text style={styles.version}>v{project.currentVersion.versionNumber}</Text>
         </View>
+        {featured ? (
+          <View style={styles.continueButton}>
+            <Text style={styles.continueText}>Continue building</Text>
+            <Text style={styles.arrow}>→</Text>
+          </View>
+        ) : (
+          <Text style={styles.openArrow}>↗</Text>
+        )}
       </View>
-
-      <Text style={styles.chevron}>›</Text>
     </Pressable>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: radii.large,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFFFFF20',
     backgroundColor: colors.surface,
-    padding: 15,
+  },
+  featuredCard: {
+    borderRadius: radii.large,
+  },
+  compactCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 18,
   },
   pressed: {
-    opacity: 0.84,
+    opacity: 0.88,
     transform: [{ scale: 0.99 }],
   },
-  thumbnail: {
-    width: 72,
-    height: 72,
+  featuredHeading: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+  },
+  featuredHeadingCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  featuredTitle: {
+    color: colors.white,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+  },
+  featuredSubtitle: {
+    color: colors.softText,
+    fontSize: 12,
+  },
+  more: {
+    color: colors.softText,
+    fontSize: 16,
+    letterSpacing: 2,
+  },
+  art: {
+    position: 'relative',
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  featuredArt: {
+    aspectRatio: 1.52,
+  },
+  compactArt: {
+    aspectRatio: 1.12,
+    padding: 12,
+  },
+  cover: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  sparkleCloud: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
   },
   spark: {
-    fontSize: 30,
+    color: '#FFFFFFD9',
+    fontSize: 48,
     fontWeight: '900',
   },
-  content: {
-    flex: 1,
-    gap: spacing.xs,
+  orbit: {
+    position: 'absolute',
+    color: '#FFFFFF38',
+    fontSize: 126,
   },
-  title: {
+  compactTitle: {
     color: colors.white,
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '900',
-    lineHeight: 23,
+    letterSpacing: -0.5,
+    lineHeight: 19,
   },
   meta: {
+    minHeight: 50,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
-  detail: {
-    color: colors.softText,
-    fontSize: 13,
+  featuredMeta: {
+    alignItems: 'stretch',
+    flexDirection: 'column',
+    padding: 14,
   },
-  chevron: {
+  statusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  status: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  version: {
+    marginLeft: 'auto',
     color: colors.softText,
-    fontSize: 28,
+    fontSize: 11,
+  },
+  continueButton: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14,
+    backgroundColor: colors.lavender,
+    paddingHorizontal: 16,
+  },
+  continueText: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  arrow: {
+    color: colors.ink,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  openArrow: {
+    color: colors.softText,
+    fontSize: 16,
   },
 });

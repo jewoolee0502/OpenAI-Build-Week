@@ -35,6 +35,23 @@ describe("ImagineLab API", () => {
     await app.close();
   });
 
+  it("allows browser preflight requests for builder updates and deletes", async () => {
+    const putPreflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/projects/example/builder",
+      headers: {
+        origin: "http://localhost:3000",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
+
+    expect(putPreflight.statusCode).toBe(204);
+    expect(putPreflight.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+    expect(putPreflight.headers["access-control-allow-methods"]).toContain("PUT");
+    expect(putPreflight.headers["access-control-allow-methods"]).toContain("DELETE");
+  });
+
   it("creates, edits, and publishes a playable project", async () => {
     const createResponse = await app.inject({
       method: "POST",
@@ -422,7 +439,7 @@ describe("ImagineLab API", () => {
     const variants = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/builder/variants`,
-      headers: childHeaders(childToken),
+      headers: { authorization: `Bearer ${childToken}` },
     });
     expect(variants.statusCode).toBe(200);
     expect(variants.json().draft.variants).toHaveLength(4);
@@ -430,9 +447,38 @@ describe("ImagineLab API", () => {
     const withoutSelection = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/builder/test`,
-      headers: childHeaders(childToken),
+      headers: { authorization: `Bearer ${childToken}` },
     });
     expect(withoutSelection.statusCode).toBe(422);
+
+    const draftWithSelection = {
+      ...variants.json().draft,
+      interpretation: "The bird follows the player's finger and collects glowing seeds.",
+      selectedVariantId: variants.json().draft.variants[0].id,
+    };
+    const selected = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${projectId}/builder`,
+      headers: childHeaders(childToken),
+      payload: { draft: draftWithSelection },
+    });
+    expect(selected.statusCode).toBe(200);
+
+    const testBuild = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/test`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(testBuild.statusCode).toBe(201);
+    expect(testBuild.json().project.currentVersion.versionNumber).toBe(2);
+
+    const readyDraft = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/builder`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(readyDraft.json().draft.stage).toBe("ready_to_publish");
+    expect(readyDraft.json().draft.interpretation).toContain("follows the player's finger");
   });
 
   it("deletes only the owner's project and removes its public game", async () => {

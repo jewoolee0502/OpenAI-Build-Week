@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,6 +45,7 @@ export default function StudioScreen() {
     publishProject,
     unpublishProject,
     transcribeAudio,
+    projectImageSource,
     clearError,
   } = useAppState();
   const project = projects.find((candidate) => candidate.id === projectId);
@@ -162,18 +165,23 @@ export default function StudioScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <View style={styles.titleRow}>
-            <View style={styles.titleContent}>
-              <Text style={styles.title}>{project.title}</Text>
-              <Text style={styles.subtitle}>
-                Version {project.currentVersion.versionNumber} · {project.status}
-              </Text>
+          <LinearGradient colors={['#4D36A2', '#C56890']} style={styles.projectHero}>
+            <Image source={projectImageSource(project) ?? undefined} style={styles.projectCover} />
+            <LinearGradient colors={['#17142B12', '#17142BF2']} style={styles.projectCoverShade} />
+            <View style={styles.projectHeroContent}>
+              <View style={styles.titleRow}>
+                <View style={styles.titleContent}>
+                  <Text style={styles.eyebrow}>PLAYTEST & IMPROVE</Text>
+                  <Text style={styles.title}>{project.title}</Text>
+                  <Text style={styles.subtitle}>Version {project.currentVersion.versionNumber} · {project.status}</Text>
+                </View>
+                <MiniBadge color={project.status === 'published' ? colors.mint : colors.lavender} label={project.status === 'published' ? 'LIVE' : 'DRAFT'} />
+              </View>
+              <View style={styles.builderButton}>
+                <ActionButton label="✎  Edit my canvas" onPress={() => router.push({ pathname: '/builder/[projectId]', params: { projectId: project.id } })} tone="secondary" />
+              </View>
             </View>
-            <MiniBadge
-              color={project.status === 'published' ? colors.mint : colors.lavender}
-              label={project.status === 'published' ? 'LIVE' : 'DRAFT'}
-            />
-          </View>
+          </LinearGradient>
 
           {hasUnpublishedChanges ? (
             <View style={styles.draftNotice}>
@@ -184,7 +192,8 @@ export default function StudioScreen() {
             </View>
           ) : null}
 
-          <GamePreview html={project.currentVersion.html} />
+          <View style={styles.previewHeading}><View><Text style={styles.eyebrow}>YOUR PLAYABLE GAME</Text><Text style={styles.previewTitle}>Try it like a player</Text></View><Text style={styles.previewHint}>Tap, test, notice</Text></View>
+          <GamePreview height={460} html={project.currentVersion.html} />
           {errorMessage ? <ErrorBanner message={errorMessage} onDismiss={clearError} /> : null}
           {isLoading ? <LoadingPill /> : null}
 
@@ -262,14 +271,43 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: spacing.md,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
     paddingHorizontal: 18,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
+  },
+  projectHero: {
+    position: 'relative',
+    minHeight: 250,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+    borderRadius: 28,
+  },
+  projectCover: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  projectCoverShade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  projectHeroContent: {
+    gap: 13,
+    padding: 18,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  eyebrow: {
+    color: colors.mint,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
   titleContent: {
     flex: 1,
@@ -285,6 +323,25 @@ const styles = StyleSheet.create({
   subtitle: {
     color: colors.softText,
     fontSize: 15,
+  },
+  builderButton: {
+    maxWidth: 240,
+  },
+  previewHeading: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  previewTitle: {
+    marginTop: 3,
+    color: colors.white,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  previewHint: {
+    color: colors.softText,
+    fontSize: 12,
   },
   draftNotice: {
     borderWidth: 1,

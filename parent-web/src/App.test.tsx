@@ -29,6 +29,23 @@ describe('Parent Portal', () => {
     expect(screen.getByRole('button', { name: 'Activity' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Insights' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: "Maya's worlds" })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Space Penguin' })).toBeInTheDocument();
+    expect(document.body.innerHTML).toContain(
+      `http://localhost:8080/api/projects/${project.id}/profile-image`,
+    );
+  });
+
+  it('shows a factual activity timeline with filters and recorded event details', async () => {
+    vi.stubGlobal('fetch', vi.fn(parentApiFixture));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Activity' }));
+
+    expect(screen.getByLabelText('Filter by project')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by activity type')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Updated Version 2' })).toBeInTheDocument();
+    expect(screen.getAllByText(/saved version 2 after a new request/i).length).toBeGreaterThan(0);
   });
 
   it('switches children from a header menu that also contains the Child ID form', async () => {
@@ -125,9 +142,9 @@ describe('Parent Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: 'Space Penguin' }));
-    expect(screen.getByRole('heading', { name: 'Version history' })).toBeInTheDocument();
-    expect(screen.getByText('Version 2')).toBeInTheDocument();
-    expect(screen.getByText('Version 1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Versions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Version 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Version 1' })).toBeInTheDocument();
   });
 
   it('renders the six creative-practice levels as an accessible radar and evidence list', async () => {
@@ -140,12 +157,12 @@ describe('Parent Portal', () => {
     expect(
       await screen.findByRole('img', { name: /creative practice radar/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Imagination')).toBeInTheDocument();
-    expect(screen.getByText('Game Design')).toBeInTheDocument();
+    expect(screen.getAllByText('Imagination').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Game Design').length).toBeGreaterThan(0);
     expect(
       screen.getByRole('button', { name: 'Reflection — Not enough evidence' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/not an educational or psychological assessment/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/not an educational or psychological assessment/i).length).toBeGreaterThan(0);
   });
 
   it("shows one child-level insight across the portfolio without a project selector", async () => {
@@ -157,10 +174,10 @@ describe('Parent Portal', () => {
     await user.click(await screen.findByRole('button', { name: 'Insights' }));
 
     expect(
-      await screen.findByRole('heading', { name: "Maya's creative portfolio" }),
+      await screen.findByRole('heading', { name: "Maya's creative landscape" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText('Project evidence')).not.toBeInTheDocument();
-    expect(screen.getByText('1 project · 0–4 evidence states')).toBeInTheDocument();
+    expect(screen.getByText(/Evidence from 1 project · 2 versions/)).toBeInTheDocument();
     expect(screen.getByText(/patterns across all available games/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Refresh child insight' }));
@@ -216,6 +233,7 @@ const project = {
   currentVersionId: '33333333-3333-4333-8333-333333333333',
   publishedVersionId: null,
   publicSlug: null,
+  profileImageUrl: `/api/projects/22222222-2222-4222-8222-222222222222/profile-image`,
   createdAt: '2026-07-18T12:00:00.000Z',
   updatedAt: '2026-07-19T12:00:00.000Z',
   currentVersion: {

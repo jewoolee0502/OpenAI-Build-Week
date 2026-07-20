@@ -9,8 +9,8 @@ import {
   useState,
 } from 'react';
 
-import { ApiError, imagineLabApi } from '@/api/client';
-import type { BuilderDraft, ChildAccount, GameProject, GuestSession } from '@/api/types';
+import { ApiError, apiBaseUrl, imagineLabApi } from '@/api/client';
+import type { AuthenticatedImageSource, BuilderDraft, ChildAccount, GameProject, GuestSession } from '@/api/types';
 import { childSessionStorage } from '@/state/child-session-storage';
 
 interface AppStateValue {
@@ -31,6 +31,7 @@ interface AppStateValue {
   generateSceneVariants: (projectId: string) => Promise<BuilderDraft>;
   testBuilderGame: (projectId: string) => Promise<GameProject>;
   transcribeAudio: (uri: string) => Promise<string>;
+  projectImageSource: (project: GameProject) => AuthenticatedImageSource | null;
   clearError: () => void;
 }
 
@@ -235,6 +236,14 @@ export function AppProvider({ children }: PropsWithChildren) {
     [requireToken],
   );
 
+  const projectImageSource = useCallback((project: GameProject): AuthenticatedImageSource | null => {
+    if (!session?.token || !apiBaseUrl || !project.profileImageUrl) return null;
+    return {
+      uri: `${apiBaseUrl}${project.profileImageUrl}`,
+      headers: { Authorization: `Bearer ${session.token}` },
+    };
+  }, [session?.token]);
+
   const deleteProject = useCallback(async (projectId: string) => {
     begin();
     try {
@@ -288,6 +297,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,
+      projectImageSource,
       clearError,
     }),
     [
@@ -308,6 +318,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,
+      projectImageSource,
       clearError,
     ],
   );

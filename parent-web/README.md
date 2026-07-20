@@ -45,15 +45,15 @@ are the visual specifications used by the current React implementation.
 
 ### Portfolio concept
 
-![ImagineLab Portfolio concept](./design/parent-portal-portfolio.png)
+![ImagineLab Portfolio concept](./design/parent-portal-portfolio-v3.png)
 
 ### Activity concept
 
-![ImagineLab Activity concept](./design/parent-portal-activity.png)
+![ImagineLab Activity concept](./design/parent-portal-activity-v3.png)
 
 ### Insights concept
 
-![ImagineLab Insights concept](./design/parent-portal-insights.png)
+![ImagineLab Insights concept](./design/parent-portal-insights-v3.png)
 
 ## Page 1: Portfolio
 

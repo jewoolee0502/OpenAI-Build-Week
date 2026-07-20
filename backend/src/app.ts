@@ -81,6 +81,15 @@ function demoSceneVariants(project: ProjectWithCurrentVersion): BuilderDraft["va
   });
 }
 
+function canvasSummary(draft: BuilderDraft): string {
+  const background = draft.assets.find((asset) => asset.kind === "background");
+  const objects = draft.assets.filter((asset) => asset.kind === "object");
+  const objectSummary = objects.length > 0
+    ? objects.map((asset) => `${asset.name} near (${asset.x.toFixed(2)}, ${asset.y.toFixed(2)})`).join(", ")
+    : "no named game objects yet";
+  return `Background: ${background?.name ?? "untitled"}. Objects: ${objectSummary}.${draft.interpretation ? ` Child's behavior idea: ${draft.interpretation}` : ""}`;
+}
+
 export interface AppDependencies {
   config: AppConfig;
   store?: ApplicationStore;
@@ -112,6 +121,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       callback(new Error("Origin not allowed"), false);
     },
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type"],
   });
   await app.register(multipart, {
@@ -274,7 +284,26 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       Object.assign(error, { statusCode: 422 });
       throw error;
     }
-    const draft: BuilderDraft = { ...project.builder, stage: "choose_design", variants: demoSceneVariants(project), selectedVariantId: null, updatedAt: new Date().toISOString() };
+    const generated = await projectImages.generateSceneVariants({
+      childUserId: actor.id,
+      projectPrompt: project.currentVersion.prompt,
+      canvasSummary: canvasSummary(project.builder),
+    });
+    const fallbackVariants = demoSceneVariants(project);
+    const variants = generated
+      ? generated.images.map((image, index) => ({
+          ...fallbackVariants[index]!,
+          previewDataUrl: `data:image/webp;base64,${image.toString("base64")}`,
+        }))
+      : fallbackVariants;
+    const draft: BuilderDraft = {
+      ...project.builder,
+      stage: "choose_design",
+      interpretationStatus: "ready",
+      variants,
+      selectedVariantId: null,
+      updatedAt: new Date().toISOString(),
+    };
     const updated = await store.saveBuilderDraft(projectId, draft);
     return { draft: updated?.builder };
   });
@@ -291,7 +320,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       Object.assign(error, { statusCode: 422 });
       throw error;
     }
-    const generated = await generation.createGame(`${project.currentVersion.prompt}. Use the selected visual direction: ${selected.title}.`, actor.id);
+    const builderContext = canvasSummary(project.builder);
+    const generated = await generation.createGame(
+      `${project.currentVersion.prompt}. Use the selected visual direction: ${selected.title}. Build from this child-created canvas: ${builderContext}`,
+      actor.id,
+    );
     const updatedProject = await store.addVersion({ projectId, prompt: `Test build: ${selected.title}`, html: generated.html });
     if (!updatedProject) throw notFound("Project not found");
     await store.saveBuilderDraft(projectId, { ...project.builder, stage: "ready_to_publish", updatedAt: new Date().toISOString() });
