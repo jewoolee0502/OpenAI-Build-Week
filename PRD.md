@@ -97,7 +97,7 @@ The product also makes the creative process itself part of the learning. As chil
 2. The guardian opens the linked child's profile.
 3. The guardian sees projects, their publish status, and creation/edit activity.
 4. The guardian opens a project preview or a public link.
-5. The guardian requests an AI project insight and sees observations, supporting project evidence, interest signals, and conversation starters.
+5. The guardian requests an AI child insight and sees portfolio-wide observations, supporting project evidence, interest signals, and conversation starters.
 
 ## 8. Functional Requirements
 
@@ -136,15 +136,16 @@ The product also makes the creative process itself part of the learning. As chil
 - For each child, list projects and their current status.
 - Display an activity timeline containing at least create, edit, publish, and unpublish events.
 
-### Parent AI project insights
+### Parent AI child insights
 
-- Generate an insight only for a guardian who is linked to the child who owns the project.
-- Analyze project prompts, immutable version history, and supported activity events; do not infer from unrelated account or personal data.
-- Return a plain-language project summary, two to five supported observation dimensions, possible interest signals, and two to four conversation starters.
-- Attach concrete project evidence to every observation dimension.
-- Use bounded language such as “in this project,” “may suggest,” and “there is not yet enough evidence.”
+- Generate a child-level portfolio insight only for a guardian who is linked to that child.
+- Analyze prompts, immutable version history, and supported activity events across all of the child's available projects; do not infer from unrelated account or personal data.
+- Return a plain-language portfolio summary, two to five supported observation dimensions, possible interest signals, and two to four conversation starters.
+- Attach concrete, named project/version evidence to every observation dimension and identify which projects contributed to the snapshot.
+- Use bounded language such as “across the available projects,” “may suggest,” and “there is not yet enough evidence.”
 - Never score, rank, diagnose, compare with other children, predict a career, or assert fixed traits, intelligence, or potential.
-- Label every report as a project-based observation rather than a psychological or educational assessment.
+- Do not attribute AI-generated implementation quality to the child; use only child-originated prompts, edits, playtests, and reflections as evidence.
+- Label every report as a portfolio-based observation of available creative work rather than a psychological, educational, or skills assessment.
 
 ## 9. Technical Stack
 
@@ -194,7 +195,7 @@ Local PostgreSQL ─────────────────────
 | `projects` | `id`, `childUserId`, `title`, `status` (`draft` or `published`), `currentVersionId`, `publishedVersionId`, `publicSlug`, `createdAt`, `updatedAt` |
 | `projectVersions` | `id`, `projectId`, `versionNumber`, `prompt`, `bundleStoragePath`, `createdAt` |
 | `activityEvents` | `id`, `childUserId`, `projectId`, `type`, `createdAt`, `metadata` |
-| `projectInsights` | `id`, `childUserId`, `projectId`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
+| `childInsights` | `id`, `childUserId`, `scope`, `sourceProjectIds`, `sourceVersionIds`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
 | PostgreSQL project bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
 
 ## 11. Safety and Security Requirements
@@ -207,7 +208,7 @@ Local PostgreSQL ─────────────────────
 - Do not allow generated code to embed secrets or backend credentials.
 - Validate and constrain generated output before saving or publishing it.
 - Record server-side audit events for project creation, edits, publishing, and unpublishing.
-- Treat parent AI insights as sensitive child-related data: authorize them server-side, keep the supporting evidence scoped to the linked child's project, and avoid unsupported developmental claims.
+- Treat parent AI insights as sensitive child-related data: authorize them server-side, keep supporting evidence scoped to the linked child's portfolio, and avoid unsupported developmental claims.
 
 ## 12. Acceptance Criteria
 
@@ -217,7 +218,7 @@ Local PostgreSQL ─────────────────────
 - The child can save a draft and publish it.
 - A published game opens and plays at a public browser URL without authentication.
 - A guardian linked to the child can sign in to the parent website and view the child's project list and activity timeline.
-- The linked guardian can generate a project insight that includes evidence and conversation starters and clearly states that it is not an assessment.
+- The linked guardian can generate one child-level insight across the child's available portfolio that includes project evidence and conversation starters and clearly states that it is not an assessment.
 - An unrelated signed-in user cannot read or edit the child's project through either the app or backend API.
 - The Expo client contains no OpenAI API key.
 
@@ -230,7 +231,7 @@ The following are intentionally not assumed in this PRD:
 3. **Public-link controls:** whether a public game can be unlisted, expire, be password-protected, or only be fully public.
 4. **Content policy:** which game themes, language, images, and external links are allowed; what happens when a prompt or generated game is disallowed.
 5. **Minimum child age and geographic launch scope:** required to define the applicable privacy and consent obligations.
-6. **Guardian activity detail:** project insight generation may use prompts and versions, but the exact prompt/version evidence displayed to the guardian must be confirmed.
+6. **Guardian activity detail:** child insight generation may use prompts and versions across the portfolio, but the exact prompt/version evidence displayed to the guardian must be confirmed.
 7. **Game capability limits:** whether generated games may use sound, external images, or network requests.
 
 ## 14. Suggested Hackathon Delivery Order
@@ -240,6 +241,6 @@ The following are intentionally not assumed in this PRD:
 3. Build the Fastify generation endpoint and store a versioned HTML game bundle.
 4. Add WebView preview and natural-language edits.
 5. Add publish/unpublish and the public `/g/:slug` route.
-6. Add the parent website with guardian linking, dashboard, activity timeline, and a project-level AI insight demo.
+6. Add the parent website with guardian linking, dashboard, activity timeline, and a child-level portfolio insight demo.
 7. Add generated-code validation, sandboxing, and end-to-end permission tests.
 8. If time remains, prototype a read-only, moderated community gallery without child-to-child messaging.

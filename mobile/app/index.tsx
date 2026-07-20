@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,18 +32,23 @@ import { colors, radii, spacing } from '@/theme';
 export default function ChildHomeScreen() {
   const router = useRouter();
   const {
+    child,
     projects,
     isLoading,
+    isRestoringSession,
     errorMessage,
+    joinAsGuest,
     refreshChildProjects,
     createProject,
+    transcribeAudio,
     clearError,
   } = useAppState();
   const [prompt, setPrompt] = useState('');
+  const childUserId = child?.id;
 
   useEffect(() => {
-    void refreshChildProjects().catch(() => undefined);
-  }, [refreshChildProjects]);
+    if (childUserId) void refreshChildProjects().catch(() => undefined);
+  }, [childUserId, refreshChildProjects]);
 
   const openProject = useCallback(
     (project: GameProject) => {
@@ -68,9 +75,61 @@ export default function ChildHomeScreen() {
     setPrompt((current) => joinPrompt(current, transcript));
   }, []);
 
+  if (isRestoringSession) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <BrandHeader />
+        <View style={styles.guestCentered}><LoadingPill label="Opening your lab…" /></View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!child) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <BrandHeader />
+        <View style={styles.guestPage}>
+          <LinearGradient colors={['#6D4FCA', '#B95E84', '#E58A6E']} style={styles.guestHero}>
+            <Text style={styles.eyebrow}>YOUR CREATOR ACCOUNT</Text>
+            <Text style={styles.guestTitle}>Join the lab as a guest.</Text>
+            <Text style={styles.heroBody}>
+              We&apos;ll make a private creator session and a Child ID you can share with a parent.
+              You don&apos;t need an email or password yet.
+            </Text>
+            <ActionButton
+              label="✦  Join as Guest"
+              loading={isLoading}
+              onPress={() => void joinAsGuest()}
+            />
+          </LinearGradient>
+          {errorMessage ? <ErrorBanner message={errorMessage} onDismiss={clearError} /> : null}
+          <Text style={styles.guestPrivacy}>
+            Your Child ID can connect a parent. Your private login token stays on this device.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <BrandHeader />
+      <View style={styles.accountCard}>
+        <View style={styles.accountCopy}>
+          <Text style={styles.accountLabel}>GUEST CREATOR</Text>
+          <Text style={styles.childId}>{child.childId}</Text>
+          <Text style={styles.accountStatus}>
+            {child.linked ? '✓ Connected to a parent' : 'Share this ID with a parent to connect'}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityLabel="Copy Child ID"
+          accessibilityRole="button"
+          onPress={() => void Clipboard.setStringAsync(child.childId)}
+          style={({ pressed }) => [styles.copyIdButton, pressed ? styles.copyIdPressed : null]}>
+          <Text style={styles.copyIdText}>Copy ID</Text>
+        </Pressable>
+      </View>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}>
@@ -96,7 +155,7 @@ export default function ChildHomeScreen() {
               textAlignVertical="top"
               value={prompt}
             />
-            <HoldToTalkButton onTranscript={handleVoiceTranscript} />
+            <HoldToTalkButton onTranscript={handleVoiceTranscript} transcribeAudio={transcribeAudio} />
             <ActionButton
               disabled={prompt.trim().length < 3}
               label="✦  Make it playable"
@@ -138,6 +197,83 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  guestCentered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestPage: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: spacing.md,
+    padding: 18,
+  },
+  guestHero: {
+    gap: spacing.md,
+    borderRadius: radii.hero,
+    padding: 26,
+  },
+  guestTitle: {
+    maxWidth: 470,
+    color: colors.white,
+    fontSize: 43,
+    fontWeight: '900',
+    letterSpacing: -2,
+    lineHeight: 44,
+  },
+  guestPrivacy: {
+    color: colors.softText,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  accountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginHorizontal: 18,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#A88BFF38',
+    borderRadius: 18,
+    backgroundColor: '#2A2543',
+    padding: 14,
+  },
+  accountCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  accountLabel: {
+    color: colors.lavender,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  childId: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  accountStatus: {
+    color: colors.softText,
+    fontSize: 11,
+  },
+  copyIdButton: {
+    borderRadius: 12,
+    backgroundColor: '#A88BFF24',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  copyIdPressed: {
+    opacity: 0.72,
+  },
+  copyIdText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '900',
   },
   content: {
     gap: spacing.md,

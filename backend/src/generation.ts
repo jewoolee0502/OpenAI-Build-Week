@@ -31,8 +31,26 @@ Analyze only the supplied project prompts and version history. Use tentative lan
 Never score, rank, diagnose, compare with other children, predict a career, or claim a fixed trait or ability.
 Each observation must cite concrete evidence from the project history.
 Focus on creative exploration, iteration, problem solving, systems thinking, follow-through, communication, and recurring interests when supported.
+Return all six creative-practice radar dimensions in the required order. A level is an evidence state, not an ability score: 0 Not enough evidence, 1 Emerging, 2 Demonstrated, 3 Repeated, 4 Sustained. The label must match the level. Use 0 when the history does not support a dimension instead of inventing evidence.
 Conversation starters should help the parent invite the child to explain their choices without testing or judging them.
 The disclaimer must say this is a project-based observation, not a psychological or educational assessment.`;
+
+const childInsightSystemPrompt = `You write evidence-based portfolio observations for a parent of an elementary-aged child.
+Analyze the child-authored prompts and version history across every supplied project as one creative portfolio.
+Describe patterns in the available work using tentative language such as "across these projects" and "the available evidence may suggest".
+Never score, grade, rank, diagnose, compare with other children, predict a career, or claim a fixed personality, trait, skill, or ability.
+Do not credit the child for implementation produced by AI. Treat only the child's prompts, edits, and recorded process as evidence of the child's choices.
+Every observation must cite concrete evidence and name the project it came from. Distinguish a repeated cross-project pattern from a one-project example.
+Focus on creative exploration, expression, game design choices, experimentation, iteration, reflection, and recurring interests when supported.
+Return all six creative-practice radar dimensions in the required order. A level is an evidence state, not an ability score: 0 Not enough evidence, 1 Emerging, 2 Demonstrated, 3 Repeated, 4 Sustained. The label must match the level. Use 0 when the portfolio does not support a dimension instead of inventing evidence.
+Conversation starters should help the parent invite the child to explain choices across their games without testing or judging them.
+The disclaimer must say this is a portfolio-based observation of available creative work, not a psychological, educational, or skills assessment.`;
+
+interface InsightProject {
+  id: string;
+  title: string;
+  versions: ProjectVersion[];
+}
 
 export interface GeneratedGame {
   title: string;
@@ -122,6 +140,29 @@ export class GenerationService {
     );
   }
 
+  public async createChildInsight(input: {
+    childUserId: string;
+    projects: InsightProject[];
+  }): Promise<ProjectInsightContent> {
+    if (!this.client) return this.demoChildInsight(input.projects);
+
+    const portfolioHistory = input.projects
+      .map((project) => {
+        const history = project.versions
+          .map((version) => `  Version ${version.versionNumber}: ${version.prompt}`)
+          .join("\n");
+        return `Project: ${project.title}\n${history}`;
+      })
+      .join("\n\n");
+    return this.requestStructured(
+      projectInsightSchema,
+      "child_portfolio_insight",
+      childInsightSystemPrompt,
+      `Analyze this child's complete available portfolio (${input.projects.length} projects).\n\n${portfolioHistory}`,
+      input.childUserId,
+    );
+  }
+
   public async transcribeAudio(input: {
     audio: Buffer;
     fileName: string;
@@ -197,6 +238,199 @@ export class GenerationService {
       ],
       disclaimer:
         "This is a project-based observation intended to support conversation. It is not a psychological, educational, or skills assessment.",
+      radar: {
+        rubricVersion: "creative-practice-v1",
+        dimensions: [
+          radarDimension(
+            "imagination",
+            2,
+            "The child turned an original idea into a playable world in this project.",
+            `The project began with: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "expression",
+            1,
+            "The initial request communicates a theme and desired experience.",
+            `The child described: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "game_design",
+            1,
+            "The request includes an interactive goal that can guide a player.",
+            `The game request was: “${prompts[0] ?? title}”`,
+          ),
+          radarDimension(
+            "experimentation",
+            versions.length > 1 ? 2 : 0,
+            versions.length > 1
+              ? "The child tried at least one alternative through a later version."
+              : "There is not yet enough project evidence about trying alternatives.",
+            versions.length > 1
+              ? `The project has ${versions.length} saved versions.`
+              : "Only the first saved version is available.",
+          ),
+          radarDimension(
+            "iteration",
+            versions.length > 2 ? 3 : versions.length > 1 ? 2 : 0,
+            versions.length > 1
+              ? "The child returned to change the game after its first version."
+              : "There is not yet enough project evidence about iteration.",
+            `The project has ${versions.length} saved version(s).`,
+          ),
+          radarDimension(
+            "reflection",
+            0,
+            "There is not yet enough child-authored reflection in this project.",
+            "No child-authored reflection has been saved yet.",
+          ),
+        ],
+      },
     };
   }
+
+  private demoChildInsight(projects: InsightProject[]): ProjectInsightContent {
+    const totalVersions = projects.reduce((total, project) => total + project.versions.length, 0);
+    const revisedProjects = projects.filter((project) => project.versions.length > 1);
+    const projectCount = projects.length;
+    const firstProject = projects[0];
+    const secondProject = projects[1];
+    const firstPrompt = firstProject?.versions[0]?.prompt ?? firstProject?.title ?? "No project evidence";
+    const projectEvidence = (project: InsightProject | undefined, fallback: string) =>
+      project
+        ? shortEvidence(
+            `${project.title}: “${shortEvidence(project.versions[0]?.prompt ?? project.title)}”`,
+            230,
+          )
+        : fallback;
+
+    return {
+      summary: `Across ${projectCount} project${projectCount === 1 ? "" : "s"} and ${totalVersions} saved version${totalVersions === 1 ? "" : "s"}, the available prompts show how the child turns themes into playable ideas. This snapshot describes patterns in the work that is currently available, not fixed qualities of the child.`,
+      dimensions: [
+        {
+          name: "Ideas across the portfolio",
+          observation:
+            projectCount > 1
+              ? "The projects explore more than one setting or premise while keeping a clear playable idea in each."
+              : "The available project turns a theme into a playable premise; more projects will show whether this recurs.",
+          evidence: [
+            projectEvidence(firstProject, "No project is available."),
+            ...(secondProject ? [projectEvidence(secondProject, "")] : []),
+          ],
+        },
+        {
+          name: "Revision across the portfolio",
+          observation:
+            revisedProjects.length > 0
+              ? `${revisedProjects.length} project${revisedProjects.length === 1 ? " has" : "s have"} later prompts that provide evidence of returning to and changing an idea.`
+              : "The portfolio contains first versions only, so there is not yet evidence of revising an existing game.",
+          evidence: [
+            revisedProjects.length > 0
+              ? `${revisedProjects[0]!.title} contains ${revisedProjects[0]!.versions.length} saved versions.`
+              : `${totalVersions} saved version${totalVersions === 1 ? " is" : "s are"} available across the portfolio.`,
+          ],
+        },
+      ],
+      interests: projects.slice(0, 5).map((project) => project.title.slice(0, 80)),
+      conversationStarters: [
+        "Which idea from all of your games would you most like to explore again, and why?",
+        "What is one choice you made differently in two of your games?",
+        "If you combined two of your projects, what would the player do?",
+      ],
+      disclaimer:
+        "This is a portfolio-based observation of the creative work currently available. It is not a psychological, educational, or skills assessment.",
+      radar: {
+        rubricVersion: "creative-practice-v1",
+        dimensions: [
+          radarDimension(
+            "imagination",
+            projectCount > 2 ? 3 : 2,
+            projectCount > 1
+              ? "Multiple projects provide repeated evidence of turning different themes into playable premises."
+              : "One project provides evidence of turning a theme into a playable premise.",
+            projectEvidence(firstProject, "No project is available."),
+          ),
+          radarDimension(
+            "expression",
+            projectCount > 1 ? 2 : 1,
+            "The prompts communicate themes, characters, or experiences the child wants the games to include.",
+            `A child-authored prompt says: “${shortEvidence(firstPrompt)}”`,
+          ),
+          radarDimension(
+            "game_design",
+            projectCount > 1 ? 3 : 2,
+            projectCount > 1
+              ? "More than one project prompt describes a player goal or interactive rule."
+              : "The available prompt describes a playable goal or interaction.",
+            projectEvidence(firstProject, "No project is available."),
+          ),
+          radarDimension(
+            "experimentation",
+            revisedProjects.length > 0 ? 2 : 0,
+            revisedProjects.length > 0
+              ? "A later saved prompt provides evidence of trying a change within an existing game."
+              : "Different projects alone do not show whether alternatives were tested within a game.",
+            revisedProjects.length > 0
+              ? `${revisedProjects[0]!.title} contains ${revisedProjects[0]!.versions.length} saved versions.`
+              : "No project has a later saved version yet.",
+          ),
+          radarDimension(
+            "iteration",
+            revisedProjects.length > 1 ? 3 : revisedProjects.length === 1 ? 2 : 0,
+            revisedProjects.length > 0
+              ? "The child returned to at least one project with a new change request."
+              : "There is not yet portfolio evidence of returning to revise a project.",
+            revisedProjects.length > 0
+              ? shortEvidence(
+                  `${revisedProjects
+                    .slice(0, 2)
+                    .map((project) => `${project.title} (${project.versions.length} versions)`)
+                    .join(", ")}.`,
+                  230,
+                )
+              : "Every available project currently has one saved version.",
+          ),
+          radarDimension(
+            "reflection",
+            0,
+            "There is not yet enough child-authored reflection across the portfolio.",
+            "No child-authored reflection has been saved yet.",
+          ),
+        ],
+      },
+    };
+  }
+}
+
+function shortEvidence(value: string, maxLength = 170): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function radarDimension<
+  Key extends
+    | "imagination"
+    | "expression"
+    | "game_design"
+    | "experimentation"
+    | "iteration"
+    | "reflection",
+>(
+  key: Key,
+  level: 0 | 1 | 2 | 3 | 4,
+  observation: string,
+  evidence: string,
+): {
+  key: Key;
+  level: 0 | 1 | 2 | 3 | 4;
+  label: "Not enough evidence" | "Emerging" | "Demonstrated" | "Repeated" | "Sustained";
+  observation: string;
+  evidence: string[];
+} {
+  const labels = [
+    "Not enough evidence",
+    "Emerging",
+    "Demonstrated",
+    "Repeated",
+    "Sustained",
+  ] as const;
+  return { key, level, label: labels[level], observation, evidence: [evidence] };
 }

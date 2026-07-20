@@ -42,6 +42,7 @@ export default function StudioScreen() {
     editProject,
     publishProject,
     unpublishProject,
+    transcribeAudio,
     clearError,
   } = useAppState();
   const project = projects.find((candidate) => candidate.id === projectId);
@@ -201,7 +202,7 @@ export default function StudioScreen() {
               textAlignVertical="top"
               value={instruction}
             />
-            <HoldToTalkButton onTranscript={handleVoiceTranscript} />
+            <HoldToTalkButton onTranscript={handleVoiceTranscript} transcribeAudio={transcribeAudio} />
             <ActionButton
               disabled={instruction.trim().length < 2}
               label="Build a new version"

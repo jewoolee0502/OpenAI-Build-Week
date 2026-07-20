@@ -1,7 +1,9 @@
 import { Platform } from 'react-native';
 
 import type {
+  ChildAccount,
   GameProject,
+  GuestSession,
   ProjectMutationResponse,
   PublishResponse,
 } from '@/api/types';
@@ -30,6 +32,7 @@ async function request<T>(
   options: {
     method?: 'GET' | 'POST' | 'DELETE';
     body?: Record<string, string> | FormData;
+    token?: string;
   },
 ): Promise<T> {
   if (!apiBaseUrl) throw new ApiError('ImagineLab API address is not configured.');
@@ -47,8 +50,7 @@ async function request<T>(
       method: options.method ?? 'GET',
       headers: {
         Accept: 'application/json',
-        'X-Demo-User-Id': 'demo-child',
-        'X-Demo-Role': 'child',
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
         ...(options.body && !isMultipart ? { 'Content-Type': 'application/json' } : {}),
       },
       body: requestBody,
@@ -76,31 +78,41 @@ async function request<T>(
 }
 
 export const imagineLabApi = {
-  async listChildProjects(): Promise<GameProject[]> {
-    const response = await request<{ projects: GameProject[] }>('/api/projects', {});
+  createGuest(): Promise<GuestSession> {
+    return request('/api/auth/child/guest', { method: 'POST' });
+  },
+
+  async getMe(token: string): Promise<ChildAccount> {
+    const response = await request<{ user: ChildAccount }>('/api/auth/me', { token });
+    return response.user;
+  },
+
+  async listChildProjects(token: string): Promise<GameProject[]> {
+    const response = await request<{ projects: GameProject[] }>('/api/projects', { token });
     return response.projects;
   },
 
-  createProject(prompt: string): Promise<ProjectMutationResponse> {
-    return request('/api/projects', { method: 'POST', body: { prompt } });
+  createProject(token: string, prompt: string): Promise<ProjectMutationResponse> {
+    return request('/api/projects', { method: 'POST', body: { prompt }, token });
   },
 
-  editProject(projectId: string, instruction: string): Promise<ProjectMutationResponse> {
+  editProject(token: string, projectId: string, instruction: string): Promise<ProjectMutationResponse> {
     return request(`/api/projects/${projectId}/edits`, {
       method: 'POST',
       body: { instruction },
+      token,
     });
   },
 
-  publishProject(projectId: string): Promise<PublishResponse> {
-    return request(`/api/projects/${projectId}/publish`, { method: 'POST' });
+  publishProject(token: string, projectId: string): Promise<PublishResponse> {
+    return request(`/api/projects/${projectId}/publish`, { method: 'POST', token });
   },
 
-  unpublishProject(projectId: string): Promise<void> {
-    return request(`/api/projects/${projectId}/publish`, { method: 'DELETE' });
+  unpublishProject(token: string, projectId: string): Promise<void> {
+    return request(`/api/projects/${projectId}/publish`, { method: 'DELETE', token });
   },
 
-  async transcribeAudio(uri: string): Promise<string> {
+  async transcribeAudio(token: string, uri: string): Promise<string> {
     const isWebRecording = Platform.OS === 'web';
     const form = new FormData();
     form.append(
@@ -114,6 +126,7 @@ export const imagineLabApi = {
     const response = await request<{ text: string }>('/api/transcriptions', {
       method: 'POST',
       body: form,
+      token,
     });
     return response.text;
   },

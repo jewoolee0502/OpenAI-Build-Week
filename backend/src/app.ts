@@ -1,21 +1,26 @@
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
-import { AuthService } from "./auth.js";
+import { AuthService, guardianSessionCookie } from "./auth.js";
 import type { AppConfig } from "./config.js";
+import { Database } from "./database.js";
 import {
   type AuthenticatedUser,
   type ProjectWithCurrentVersion,
   createProjectBodySchema,
   editProjectBodySchema,
+  guardianLoginBodySchema,
+  guardianRegistrationBodySchema,
+  linkChildBodySchema,
 } from "./domain.js";
 import { GenerationService } from "./generation.js";
 import { renderPublicGamePage, UnsafeGameBundleError } from "./safety.js";
-import { LocalProjectStore } from "./store.js";
+import { type ApplicationStore, PostgresStore } from "./store.js";
 
 const projectParamsSchema = z.object({ projectId: z.string().uuid() });
-const childParamsSchema = z.object({ childUserId: z.string().min(1).max(128) });
+const childParamsSchema = z.object({ childUserId: z.string().uuid() });
 const guardianProjectParamsSchema = childParamsSchema.extend({ projectId: z.string().uuid() });
 const slugParamsSchema = z.object({ slug: z.string().regex(/^[a-z0-9-]{4,80}$/) });
 const supportedAudioTypes = new Set([
@@ -65,23 +70,34 @@ function notFound(message: string): Error {
 
 export interface AppDependencies {
   config: AppConfig;
-  store?: LocalProjectStore;
+  store?: ApplicationStore;
+  database?: Database;
   generation?: GenerationService;
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
   const { config } = dependencies;
   const app = Fastify({ logger: config.nodeEnv !== "test" });
-  const store = dependencies.store ?? new LocalProjectStore(config.dataFile);
+  const ownedDatabase = dependencies.store
+    ? null
+    : dependencies.database ?? new Database(config.databaseUrl);
+  if (ownedDatabase && config.autoMigrate) await ownedDatabase.migrate();
+  const store = dependencies.store ?? new PostgresStore(ownedDatabase!);
   const generation = dependencies.generation ?? new GenerationService(config);
-  const auth = new AuthService(config);
+  const auth = new AuthService(config, store);
 
+  if (ownedDatabase && !dependencies.database) {
+    app.addHook("onClose", async () => ownedDatabase.close());
+  }
+
+  await app.register(cookie);
   await app.register(cors, {
     origin: (origin, callback) => {
       if (!origin || config.allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error("Origin not allowed"), false);
     },
-    allowedHeaders: ["Authorization", "Content-Type", "X-Demo-User-Id", "X-Demo-Role"],
+    credentials: true,
+    allowedHeaders: ["Authorization", "Content-Type"],
   });
   await app.register(multipart, {
     limits: {
@@ -136,8 +152,61 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.get("/health", async () => ({
     ok: true,
     service: "imaginelab-api",
+    storage: "postgresql",
     aiProvider: config.openAiApiKey ? "openai" : "demo",
   }));
+
+  app.post("/api/auth/child/guest", async (_request, reply) => {
+    const session = await auth.createGuest();
+    return reply.status(201).send(session);
+  });
+
+  app.post("/api/auth/guardian/register", async (request, reply) => {
+    const body = guardianRegistrationBodySchema.parse(request.body);
+    const session = await auth.registerGuardian(body);
+    reply.setCookie(guardianSessionCookie, session.token, auth.cookieOptions());
+    return reply.status(201).send({ user: session.user });
+  });
+
+  app.post("/api/auth/guardian/login", async (request, reply) => {
+    const body = guardianLoginBodySchema.parse(request.body);
+    const session = await auth.loginGuardian(body);
+    reply.setCookie(guardianSessionCookie, session.token, auth.cookieOptions());
+    return { user: session.user };
+  });
+
+  app.post("/api/auth/guardian/logout", async (request, reply) => {
+    await auth.revokeGuardianSession(request);
+    reply.clearCookie(guardianSessionCookie, { path: "/" });
+    return reply.status(204).send();
+  });
+
+  app.get("/api/auth/me", async (request) => ({ user: await user(request) }));
+
+  app.get("/api/guardian/children", async (request) => {
+    const actor = await user(request);
+    requireRole(actor, "guardian");
+    return { children: await store.listLinkedChildren(actor.id) };
+  });
+
+  app.post("/api/guardian/children/link", async (request, reply) => {
+    const actor = await user(request);
+    requireRole(actor, "guardian");
+    const body = linkChildBodySchema.parse(request.body);
+    const child = await store.linkChild(actor.id, body.childId);
+    if (!child) throw notFound("No child account matches that Child ID");
+    return reply.status(201).send({ child });
+  });
+
+  app.delete("/api/guardian/children/:childUserId/link", async (request, reply) => {
+    const actor = await user(request);
+    requireRole(actor, "guardian");
+    const { childUserId } = childParamsSchema.parse(request.params);
+    if (!(await store.unlinkChild(actor.id, childUserId))) {
+      throw notFound("Active child link not found");
+    }
+    return reply.status(204).send();
+  });
 
   app.get("/api/projects", async (request) => {
     const actor = await user(request);
@@ -248,9 +317,37 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const { childUserId } = childParamsSchema.parse(request.params);
     await linkedGuardian(request, childUserId);
     return {
-      projects: await store.listProjectsForChild(childUserId),
+      projects: await store.listProjectsWithVersionsForChild(childUserId),
       activities: await store.getActivities(childUserId),
     };
+  });
+
+  app.get("/api/guardian/children/:childUserId/insight", async (request) => {
+    const { childUserId } = childParamsSchema.parse(request.params);
+    await linkedGuardian(request, childUserId);
+    return { insight: await store.getLatestChildInsight(childUserId) };
+  });
+
+  app.post("/api/guardian/children/:childUserId/insight", async (request, reply) => {
+    const { childUserId } = childParamsSchema.parse(request.params);
+    const guardian = await linkedGuardian(request, childUserId);
+    const projects = await store.listProjectsWithVersionsForChild(childUserId);
+    if (projects.length === 0) {
+      const error = new Error("Create at least one project before generating child insights");
+      Object.assign(error, { statusCode: 422 });
+      throw error;
+    }
+    const content = await generation.createChildInsight({ childUserId, projects });
+    const insight = await store.saveChildInsight({
+      childUserId,
+      requestedByGuardianUserId: guardian.id,
+      sourceProjectIds: projects.map((project) => project.id),
+      sourceVersionIds: projects.flatMap((project) =>
+        project.versions.map((version) => version.id),
+      ),
+      content,
+    });
+    return reply.status(201).send({ insight });
   });
 
   app.get("/api/guardian/children/:childUserId/projects/:projectId/insight", async (request) => {
@@ -265,15 +362,21 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     "/api/guardian/children/:childUserId/projects/:projectId/insight",
     async (request, reply) => {
       const { childUserId, projectId } = guardianProjectParamsSchema.parse(request.params);
-      await linkedGuardian(request, childUserId);
+      const guardian = await linkedGuardian(request, childUserId);
       const project = await store.getProject(projectId);
       if (!project || project.childUserId !== childUserId) throw notFound("Project not found");
+      const versions = await store.getVersions(projectId);
       const content = await generation.createInsight({
         childUserId,
         title: project.title,
-        versions: await store.getVersions(projectId),
+        versions,
       });
-      const insight = await store.saveInsight(project, content);
+      const insight = await store.saveInsight({
+        project,
+        requestedByGuardianUserId: guardian.id,
+        sourceVersionIds: versions.map((version) => version.id),
+        content,
+      });
       return reply.status(201).send({ insight });
     },
   );

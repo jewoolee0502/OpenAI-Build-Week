@@ -1,175 +1,384 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { parentApi } from './api';
-import type { ActivityEvent, GameProject, GuardianDashboard, ProjectInsight } from './types';
+import { ApiError, parentApi, publicGameUrl } from './api';
+import type {
+  ActivityEvent,
+  ChildInsight,
+  CreativeDimensionKey,
+  CreativeDimensionValue,
+  GameProject,
+  GuardianDashboard,
+  GuardianUser,
+  LinkedChild,
+} from './types';
 import './App.css';
 
-function App() {
-  const [dashboard, setDashboard] = useState<GuardianDashboard>({ projects: [], activities: [] });
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+type PortalPage = 'portfolio' | 'activity' | 'insights';
 
-  const loadDashboard = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
+const emptyDashboard: GuardianDashboard = { projects: [], activities: [] };
+
+function App() {
+  const [guardian, setGuardian] = useState<GuardianUser | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    void parentApi
+      .me()
+      .then((user) => {
+        if (active) setGuardian(user);
+      })
+      .catch((error: unknown) => {
+        if (active && error instanceof ApiError && error.statusCode === 401) setGuardian(null);
+        else if (active) setGuardian(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (guardian === undefined) return <LoadingScreen />;
+  if (guardian === null) return <AuthScreen onAuthenticated={setGuardian} />;
+  return <Portal guardian={guardian} onSignedOut={() => setGuardian(null)} />;
+}
+
+function LoadingScreen() {
+  return (
+    <main className="center-screen" aria-live="polite">
+      <Brand />
+      <span className="loading-orbit" aria-hidden="true">✦</span>
+      <p>Opening the parent portal…</p>
+    </main>
+  );
+}
+
+function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: GuardianUser) => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      setSubmitting(true);
+      setError(null);
+      try {
+        const user =
+          mode === 'login'
+            ? await parentApi.login(email.trim(), password)
+            : await parentApi.register(displayName.trim(), email.trim(), password);
+        onAuthenticated(user);
+      } catch (submissionError) {
+        setError(messageFrom(submissionError));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [displayName, email, mode, onAuthenticated, password],
+  );
+
+  return (
+    <main className="auth-page">
+      <section className="auth-story">
+        <Brand />
+        <div>
+          <p className="eyebrow">PARENT PORTAL</p>
+          <h1>See the imagination behind every game.</h1>
+          <p>
+            Follow the ideas, experiments, and thoughtful revisions behind your child&apos;s
+            ImagineLab worlds.
+          </p>
+        </div>
+        <div className="auth-stars" aria-hidden="true">✦　☆　✧</div>
+      </section>
+
+      <section className="auth-card" aria-labelledby="auth-title">
+        <p className="eyebrow">WELCOME</p>
+        <h2 id="auth-title">{mode === 'login' ? 'Sign in to ImagineLab' : 'Create a parent account'}</h2>
+        <p className="muted">
+          {mode === 'login'
+            ? 'Use the parent account connected to your child.'
+            : 'You can connect a child with their Child ID after registration.'}
+        </p>
+        <form onSubmit={(event) => void submit(event)}>
+          {mode === 'register' ? (
+            <label>
+              Your name
+              <input
+                autoComplete="name"
+                onChange={(event) => setDisplayName(event.target.value)}
+                required
+                value={displayName}
+              />
+            </label>
+          ) : null}
+          <label>
+            Email
+            <input
+              autoComplete="email"
+              inputMode="email"
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              minLength={10}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </label>
+          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          <button className="primary-button wide" disabled={submitting} type="submit">
+            {submitting ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+        <button
+          className="switch-auth"
+          onClick={() => setMode((current) => (current === 'login' ? 'register' : 'login'))}
+          type="button"
+        >
+          {mode === 'login' ? 'New here? Create a parent account' : 'Already registered? Sign in'}
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function Portal({ guardian, onSignedOut }: { guardian: GuardianUser; onSignedOut: () => void }) {
+  const [page, setPage] = useState<PortalPage>('portfolio');
+  const [children, setChildren] = useState<LinkedChild[] | undefined>(undefined);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<GuardianDashboard>(emptyDashboard);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showLinkForm, setShowLinkForm] = useState(false);
+
+  const selectedChild = useMemo(
+    () => children?.find((child) => child.id === selectedChildId) ?? null,
+    [children, selectedChildId],
+  );
+
+  const loadChildren = useCallback(async () => {
+    setError(null);
     try {
-      setDashboard(await parentApi.loadDashboard());
-    } catch (error) {
-      setErrorMessage(messageFrom(error));
-    } finally {
-      setIsLoading(false);
+      const linkedChildren = await parentApi.listChildren();
+      setChildren(linkedChildren);
+      setSelectedChildId((current) => current ?? linkedChildren[0]?.id ?? null);
+      if (linkedChildren.length === 0) setShowLinkForm(true);
+    } catch (loadError) {
+      setError(messageFrom(loadError));
+      setChildren([]);
     }
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    void loadChildren();
+  }, [loadChildren]);
 
-  const selectedProject = useMemo(
-    () => dashboard.projects.find((project) => project.id === selectedProjectId) ?? null,
-    [dashboard.projects, selectedProjectId],
-  );
+  useEffect(() => {
+    if (!selectedChildId) {
+      setDashboard(emptyDashboard);
+      return;
+    }
+    let active = true;
+    setLoadingDashboard(true);
+    setError(null);
+    void parentApi
+      .loadDashboard(selectedChildId)
+      .then((result) => {
+        if (active) setDashboard(result);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(messageFrom(loadError));
+      })
+      .finally(() => {
+        if (active) setLoadingDashboard(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedChildId]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await parentApi.logout();
+    } finally {
+      onSignedOut();
+    }
+  }, [onSignedOut]);
 
   return (
-    <div className="app-shell">
-      <SiteHeader onHome={() => setSelectedProjectId(null)} />
-      <main>
-        {selectedProject ? (
-          <ProjectDetail project={selectedProject} onBack={() => setSelectedProjectId(null)} />
-        ) : (
-          <Dashboard
-            activities={dashboard.activities}
-            errorMessage={errorMessage}
-            isLoading={isLoading}
-            onOpenProject={(project) => setSelectedProjectId(project.id)}
-            onRetry={() => void loadDashboard()}
-            projects={dashboard.projects}
-          />
-        )}
+    <div className="portal-shell">
+      <header className="portal-header">
+        <Brand />
+        <nav aria-label="Parent portal pages" className="main-nav">
+          {(['portfolio', 'activity', 'insights'] as const).map((item) => (
+            <button
+              aria-current={page === item ? 'page' : undefined}
+              className={page === item ? 'active' : ''}
+              key={item}
+              onClick={() => setPage(item)}
+              type="button"
+            >
+              {titleCase(item)}
+            </button>
+          ))}
+        </nav>
+        <div className="account-actions">
+          {children && children.length > 0 ? (
+            <select
+              aria-label="Linked child"
+              onChange={(event) => setSelectedChildId(event.target.value)}
+              value={selectedChildId ?? ''}
+            >
+              {children.map((child) => (
+                <option key={child.id} value={child.id}>{child.displayName}</option>
+              ))}
+            </select>
+          ) : null}
+          <button className="avatar-button" onClick={() => setShowLinkForm(true)} type="button">
+            <span aria-hidden="true">👨‍👩‍👧</span>
+            <span>{guardian.displayName}</span>
+          </button>
+          <button className="quiet-button" onClick={() => void signOut()} type="button">Sign out</button>
+        </div>
+      </header>
+
+      {error ? <ErrorNotice message={error} /> : null}
+      {showLinkForm ? (
+        <LinkChildPanel
+          onClose={children && children.length > 0 ? () => setShowLinkForm(false) : undefined}
+          onLinked={(child) => {
+            setChildren((current) => [...(current ?? []), child]);
+            setSelectedChildId(child.id);
+            setShowLinkForm(false);
+          }}
+        />
+      ) : null}
+
+      <main className="portal-main">
+        {children === undefined || loadingDashboard ? <PageLoader /> : null}
+        {children?.length === 0 && !showLinkForm ? (
+          <EmptyChildren onLink={() => setShowLinkForm(true)} />
+        ) : null}
+        {selectedChild && !loadingDashboard ? (
+          page === 'portfolio' ? (
+            <PortfolioPage child={selectedChild} projects={dashboard.projects} />
+          ) : page === 'activity' ? (
+            <ActivityPage
+              activities={dashboard.activities}
+              child={selectedChild}
+              projects={dashboard.projects}
+            />
+          ) : (
+            <InsightsPage child={selectedChild} projects={dashboard.projects} />
+          )
+        ) : null}
       </main>
-      <footer className="site-footer">
-        <span>ImagineLab Parent Portal</span>
-        <span>Project observations, not an assessment.</span>
-      </footer>
     </div>
   );
 }
 
-function SiteHeader({ onHome }: { onHome: () => void }) {
+function Brand() {
   return (
-    <header className="site-header">
-      <button className="brand-button" onClick={onHome} type="button">
-        <span className="brand-mark" aria-hidden="true">✦</span>
-        <span>ImagineLab</span>
-      </button>
-      <div className="portal-label">
-        <span className="portal-dot" aria-hidden="true" />
-        Parent portal
+    <div className="brand" aria-label="ImagineLab">
+      <span>ImagineLab</span><i aria-hidden="true">✦</i>
+    </div>
+  );
+}
+
+function LinkChildPanel({
+  onClose,
+  onLinked,
+}: {
+  onClose?: () => void;
+  onLinked: (child: LinkedChild) => void;
+}) {
+  const [childId, setChildId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = useCallback(async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      onLinked(await parentApi.linkChild(childId.trim().toUpperCase()));
+    } catch (linkError) {
+      setError(messageFrom(linkError));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [childId, onLinked]);
+
+  return (
+    <section className="link-panel" aria-labelledby="link-title">
+      <div>
+        <p className="eyebrow">CONNECT A CHILD</p>
+        <h2 id="link-title">Enter the Child ID shown in the ImagineLab app.</h2>
+        <p>The ID looks like KID-ABCD-2345. It is not the child&apos;s private login token.</p>
       </div>
-    </header>
+      <form onSubmit={(event) => void submit(event)}>
+        <label htmlFor="child-id">Child ID</label>
+        <div className="inline-form">
+          <input
+            id="child-id"
+            onChange={(event) => setChildId(event.target.value)}
+            pattern="KID-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}"
+            placeholder="KID-ABCD-2345"
+            required
+            value={childId}
+          />
+          <button className="primary-button" disabled={submitting} type="submit">
+            {submitting ? 'Connecting…' : 'Connect'}
+          </button>
+          {onClose ? <button className="quiet-button" onClick={onClose} type="button">Cancel</button> : null}
+        </div>
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+      </form>
+    </section>
   );
 }
 
-interface DashboardProps {
-  activities: ActivityEvent[];
-  errorMessage: string | null;
-  isLoading: boolean;
-  onOpenProject: (project: GameProject) => void;
-  onRetry: () => void;
-  projects: GameProject[];
-}
-
-function Dashboard({
-  activities,
-  errorMessage,
-  isLoading,
-  onOpenProject,
-  onRetry,
-  projects,
-}: DashboardProps) {
-  const publishedCount = projects.filter((project) => project.status === 'published').length;
-  const totalVersions = projects.reduce(
-    (total, project) => total + project.currentVersion.versionNumber,
-    0,
-  );
+function PortfolioPage({ child, projects }: { child: LinkedChild; projects: GameProject[] }) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
 
   return (
-    <div className="page-stack dashboard-page">
-      <section className="hero-section">
-        <div className="hero-copy">
-          <p className="eyebrow">ALEX'S CREATIVE LAB</p>
-          <h1>See the thinking behind the play.</h1>
-          <p className="hero-description">
-            Follow each game from first idea to latest version, then turn the creative process into
-            a better conversation.
-          </p>
-        </div>
-        <div className="hero-stats" aria-label="Project summary">
-          <Stat label="Projects" value={projects.length} />
-          <Stat label="Versions" value={totalVersions} />
-          <Stat label="Published" value={publishedCount} />
-        </div>
-      </section>
-
-      {errorMessage ? (
-        <ErrorNotice message={errorMessage} onRetry={onRetry} />
-      ) : null}
-
-      <section aria-labelledby="projects-title" className="section-block">
-        <SectionHeader
-          detail={projects.length === 1 ? '1 project' : `${projects.length} projects`}
-          id="projects-title"
-          title="Alex's projects"
+    <div className={`portfolio-layout ${selectedProject ? 'drawer-open' : ''}`}>
+      <section className="page-content">
+        <PageHeading
+          eyebrow="PORTFOLIO"
+          title={`${possessive(child.displayName)} worlds`}
+          description={`Games and stories ${child.displayName} creates in ImagineLab.`}
         />
-        {isLoading ? (
-          <LoadingState label="Loading the creative lab…" />
-        ) : projects.length === 0 ? (
-          <EmptyState />
+        {projects.length === 0 ? (
+          <EmptyCard title="A blank lab is full of possibilities." copy="New games will appear here." />
         ) : (
           <div className="project-grid">
             {projects.map((project, index) => (
               <ProjectCard
                 index={index}
                 key={project.id}
-                onOpen={() => onOpenProject(project)}
+                onOpen={() => setSelectedProjectId(project.id)}
                 project={project}
               />
             ))}
           </div>
         )}
       </section>
-
-      <section aria-labelledby="activity-title" className="activity-section">
-        <SectionHeader detail="Create · Edit · Publish" id="activity-title" title="Recent activity" />
-        {activities.length === 0 ? (
-          <p className="muted-copy">Activity appears here as Alex builds and changes projects.</p>
-        ) : (
-          <div className="activity-list">
-            {activities.slice(0, 8).map((activity) => (
-              <ActivityRow activity={activity} key={activity.id} projects={projects} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="stat-item">
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function SectionHeader({ detail, id, title }: { detail: string; id: string; title: string }) {
-  return (
-    <div className="section-header">
-      <h2 id={id}>{title}</h2>
-      <span>{detail}</span>
+      {selectedProject ? (
+        <ProjectDrawer onClose={() => setSelectedProjectId(null)} project={selectedProject} />
+      ) : null}
     </div>
   );
 }
@@ -183,250 +392,382 @@ function ProjectCard({
   onOpen: () => void;
   project: GameProject;
 }) {
-  const previewClass = `project-preview preview-${(index % 3) + 1}`;
-
   return (
     <article className="project-card">
-      <button aria-label={`Open ${project.title}`} className={previewClass} onClick={onOpen} type="button">
-        <span className="preview-orbit orbit-one" />
-        <span className="preview-orbit orbit-two" />
-        <span className="preview-spark">✦</span>
-        <span className="preview-number">0{project.currentVersion.versionNumber}</span>
+      <button className={`project-art art-${(index % 4) + 1}`} onClick={onOpen} type="button">
+        <span aria-hidden="true">{['🐒', '🐧', '🌈', '⚽'][index % 4]}</span>
+        <strong>{project.title}</strong>
       </button>
-      <div className="project-card-body">
-        <div className="project-card-topline">
-          <span className={`status-label status-${project.status}`}>
-            {project.status === 'published' ? 'Published' : 'Draft'}
-          </span>
-          <span>Version {project.currentVersion.versionNumber}</span>
-        </div>
-        <h3>{project.title}</h3>
-        <p>Updated {formatDate(project.updatedAt)}</p>
-        <button className="text-button" onClick={onOpen} type="button">
-          View project <span aria-hidden="true">→</span>
-        </button>
+      <div className="project-meta">
+        <span className={`status ${project.status}`}>{titleCase(project.status)}</span>
+        <span>v{project.currentVersion.versionNumber}</span>
+        <time dateTime={project.updatedAt}>{formatDate(project.updatedAt)}</time>
       </div>
     </article>
   );
 }
 
-function ActivityRow({ activity, projects }: { activity: ActivityEvent; projects: GameProject[] }) {
-  const project = projects.find((candidate) => candidate.id === activity.projectId);
-  const isPublish = activity.type === 'publish';
+function ProjectDrawer({ onClose, project }: { onClose: () => void; project: GameProject }) {
+  const [previewVersionId, setPreviewVersionId] = useState(project.currentVersion.id);
+  const previewVersion =
+    project.versions.find((version) => version.id === previewVersionId) ?? project.currentVersion;
 
   return (
-    <article className="activity-row">
-      <div className={`activity-icon ${isPublish ? 'activity-icon-mint' : ''}`} aria-hidden="true">
-        {isPublish ? '↗' : '✦'}
+    <aside className="project-drawer" aria-label={`${project.title} project details`}>
+      <div className="drawer-title">
+        <h2>{project.title}</h2>
+        <button aria-label="Close project details" onClick={onClose} type="button">×</button>
       </div>
-      <div className="activity-copy">
-        <strong>{activityLabel(activity.type)}</strong>
-        <span>{project?.title ?? 'Project'}</span>
+      <div className="preview-frame">
+        <iframe
+          referrerPolicy="no-referrer"
+          sandbox="allow-scripts"
+          srcDoc={previewVersion.html}
+          title={`${project.title} version ${previewVersion.versionNumber} playable preview`}
+        />
       </div>
-      <time dateTime={activity.createdAt}>{formatDate(activity.createdAt)}</time>
-    </article>
+      <div className="drawer-actions">
+        {project.publicSlug ? (
+          <a className="primary-button" href={publicGameUrl(project.publicSlug)} target="_blank" rel="noreferrer">Open game</a>
+        ) : (
+          <span className="status draft">Draft preview</span>
+        )}
+        <span>Latest version: {project.currentVersion.versionNumber}</span>
+      </div>
+      <section className="version-history">
+        <div>
+          <p className="eyebrow">IMMUTABLE VERSIONS</p>
+          <h3>Version history</h3>
+        </div>
+        <div className="version-list">
+          {[...project.versions].reverse().map((version) => (
+            <button
+              aria-pressed={previewVersion.id === version.id}
+              className="version-chip"
+              key={version.id}
+              onClick={() => setPreviewVersionId(version.id)}
+              type="button"
+            >
+              <strong>Version {version.versionNumber}</strong>
+              <time dateTime={version.createdAt}>{formatDate(version.createdAt)}</time>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="learning-snapshot">
+        <p className="eyebrow">PROJECT LEARNING SNAPSHOT</p>
+        <h3>Request for version {previewVersion.versionNumber}</h3>
+        <blockquote>“{previewVersion.prompt}”</blockquote>
+        <p>Evidence from this project only. Open Insights for the six creative-practice signals.</p>
+      </section>
+    </aside>
   );
 }
 
-function ProjectDetail({ project, onBack }: { project: GameProject; onBack: () => void }) {
-  const [insight, setInsight] = useState<ProjectInsight | null>(null);
-  const [isLoadingInsight, setIsLoadingInsight] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+function ActivityPage({
+  activities,
+  child,
+  projects,
+}: {
+  activities: ActivityEvent[];
+  child: LinkedChild;
+  projects: GameProject[];
+}) {
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  return (
+    <section className="page-content narrow-page">
+      <PageHeading
+        eyebrow="ACTIVITY"
+        title={`${possessive(child.displayName)} creative trail`}
+        description="Meaningful creation milestones, shown chronologically — not screen-time tracking."
+      />
+      {activities.length === 0 ? (
+        <EmptyCard title="No activity yet." copy="Create, edit, playtest, and publishing events will appear here." />
+      ) : (
+        <div className="timeline">
+          {activities.map((activity) => {
+            const project = projectById.get(activity.projectId);
+            return (
+              <article className="timeline-event" key={activity.id}>
+                <span className={`event-icon event-${activity.type}`} aria-hidden="true">
+                  {activityIcon(activity.type)}
+                </span>
+                <div>
+                  <time dateTime={activity.createdAt}>{formatDateTime(activity.createdAt)}</time>
+                  <h2>{activityLabel(activity.type)}</h2>
+                  <p>{project?.title ?? 'ImagineLab project'}</p>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InsightsPage({ child, projects }: { child: LinkedChild; projects: GameProject[] }) {
+  const [insight, setInsight] = useState<ChildInsight | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    let isActive = true;
-    setIsLoadingInsight(true);
+    let active = true;
+    setInsight(undefined);
+    setError(null);
     void parentApi
-      .loadInsight(project.id)
+      .loadInsight(child.id)
       .then((result) => {
-        if (isActive) setInsight(result);
+        if (active) setInsight(result);
       })
-      .catch((error: unknown) => {
-        if (isActive) setErrorMessage(messageFrom(error));
-      })
-      .finally(() => {
-        if (isActive) setIsLoadingInsight(false);
+      .catch((loadError: unknown) => {
+        if (active) {
+          setInsight(null);
+          setError(messageFrom(loadError));
+        }
       });
     return () => {
-      isActive = false;
+      active = false;
     };
-  }, [project.id]);
+  }, [child.id]);
 
-  const generateInsight = useCallback(async () => {
-    setIsLoadingInsight(true);
-    setErrorMessage(null);
+  const generate = useCallback(async () => {
+    if (projects.length === 0) return;
+    setGenerating(true);
+    setError(null);
     try {
-      setInsight(await parentApi.generateInsight(project.id));
-    } catch (error) {
-      setErrorMessage(messageFrom(error));
+      setInsight(await parentApi.generateInsight(child.id));
+    } catch (generationError) {
+      setError(messageFrom(generationError));
     } finally {
-      setIsLoadingInsight(false);
+      setGenerating(false);
     }
-  }, [project.id]);
+  }, [child.id, projects.length]);
 
   return (
-    <div className="page-stack detail-page">
-      <button className="back-button" onClick={onBack} type="button">← Back to projects</button>
-
-      <section className="detail-heading">
-        <div>
-          <p className="eyebrow">PROJECT INSIGHT</p>
-          <h1>{project.title}</h1>
-          <p>
-            Version {project.currentVersion.versionNumber} · Updated {formatDate(project.updatedAt)}
-          </p>
-        </div>
-        <span className={`status-label status-${project.status}`}>
-          {project.status === 'published' ? 'Published' : 'Draft'}
-        </span>
-      </section>
-
-      <div className="detail-layout">
-        <section aria-labelledby="preview-title" className="preview-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="panel-kicker">PLAYABLE PREVIEW</p>
-              <h2 id="preview-title">The latest build</h2>
-            </div>
-            <span>v{project.currentVersion.versionNumber}</span>
-          </div>
-          <div className="game-frame-shell">
-            <iframe
-              referrerPolicy="no-referrer"
-              sandbox="allow-scripts"
-              srcDoc={project.currentVersion.html}
-              title={`${project.title} preview`}
-            />
-          </div>
-        </section>
-
-        <aside className="context-panel">
-          <p className="panel-kicker">LATEST REQUEST</p>
-          <blockquote>“{project.currentVersion.prompt}”</blockquote>
-          <dl>
-            <div><dt>Started</dt><dd>{formatDate(project.createdAt)}</dd></div>
-            <div><dt>Versions</dt><dd>{project.currentVersion.versionNumber}</dd></div>
-            <div><dt>Status</dt><dd>{project.status}</dd></div>
-          </dl>
-        </aside>
-      </div>
-
-      {errorMessage ? <ErrorNotice message={errorMessage} onRetry={() => void generateInsight()} /> : null}
-
-      <section aria-labelledby="insight-title" className="insight-section">
-        <SectionHeader
-          detail="Evidence from this project only"
-          id="insight-title"
-          title="AI project observation"
+    <section className="page-content insights-page">
+      <PageHeading
+        eyebrow="CREATIVE INSIGHTS"
+        title={`How ${child.displayName} approaches making games`}
+        description="Evidence observed across the full available portfolio — never a grade, ranking, or fixed ability score."
+      />
+      {error ? <ErrorNotice message={error} /> : null}
+      {insight === undefined ? <PageLoader /> : insight ? (
+        <InsightDashboard
+          child={child}
+          insight={insight}
+          onRefresh={() => void generate()}
+          refreshing={generating}
         />
-        {isLoadingInsight ? (
-          <LoadingState label="Reading the project story…" />
-        ) : insight ? (
-          <InsightReport insight={insight} />
-        ) : (
-          <div className="generate-panel">
-            <div>
-              <p className="panel-kicker">CONVERSATION, NOT A SCORE</p>
-              <h3>Turn this build into a talking point.</h3>
-              <p>
-                ImagineLab reads the project's prompts and versions to surface specific observations
-                and questions you can explore together.
-              </p>
-            </div>
-            <button className="primary-button" onClick={() => void generateInsight()} type="button">
-              ✦ Generate observation
+      ) : projects.length > 0 ? (
+        <div className="generate-insight">
+          <span aria-hidden="true">✦</span>
+          <h2>Build {child.displayName}&apos;s first portfolio snapshot.</h2>
+          <p>ImagineLab will read all {projects.length} project{projects.length === 1 ? '' : 's'} and their immutable versions.</p>
+          <button className="primary-button" disabled={generating} onClick={() => void generate()} type="button">
+            {generating ? 'Reading the portfolio…' : 'Generate child insight'}
+          </button>
+        </div>
+      ) : (
+        <EmptyCard title="No project evidence yet." copy="Insights begin after the first game is created." />
+      )}
+    </section>
+  );
+}
+
+function InsightDashboard({
+  child,
+  insight,
+  onRefresh,
+  refreshing,
+}: {
+  child: LinkedChild;
+  insight: ChildInsight;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const [selectedKey, setSelectedKey] = useState<CreativeDimensionKey>('imagination');
+  const selected = insight.radar.dimensions.find((dimension) => dimension.key === selectedKey)!;
+  const projectCount = insight.sourceProjectIds.length;
+  return (
+    <div className="insight-dashboard">
+      <div className="snapshot-toolbar">
+        <div>
+          <p className="eyebrow">LATEST PORTFOLIO SNAPSHOT</p>
+          <time dateTime={insight.createdAt}>Generated {formatDateTime(insight.createdAt)}</time>
+        </div>
+        <button className="primary-button" disabled={refreshing} onClick={onRefresh} type="button">
+          {refreshing ? 'Refreshing insight…' : 'Refresh child insight'}
+        </button>
+      </div>
+      <section className="radar-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">CREATIVE PRACTICE RADAR</p>
+            <h2>{possessive(child.displayName)} creative portfolio</h2>
+          </div>
+          <span className="evidence-key">
+            {projectCount} project{projectCount === 1 ? '' : 's'} · 0–4 evidence states
+          </span>
+        </div>
+        <RadarChart dimensions={insight.radar.dimensions} />
+        <div className="dimension-controls" aria-label="Creative-practice dimensions">
+          {insight.radar.dimensions.map((dimension) => (
+            <button
+              aria-pressed={selectedKey === dimension.key}
+              key={dimension.key}
+              onClick={() => setSelectedKey(dimension.key)}
+              type="button"
+            >
+              {dimensionLabel(dimension.key)} — {dimension.label}
             </button>
-          </div>
-        )}
+          ))}
+        </div>
       </section>
-    </div>
-  );
-}
-
-function InsightReport({ insight }: { insight: ProjectInsight }) {
-  return (
-    <div className="insight-report">
-      <article className="summary-card">
-        <p className="panel-kicker">PROJECT SUMMARY</p>
+      <aside className="evidence-card" aria-live="polite">
+        <p className="eyebrow">SELECTED EVIDENCE</p>
+        <h2>{dimensionLabel(selected.key)} evidence</h2>
+        <span className={`level-badge level-${selected.level}`}>{selected.label}</span>
+        <p>{selected.observation}</p>
+        <ul>{selected.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+      </aside>
+      <section className="summary-module">
+        <p className="eyebrow">PORTFOLIO SUMMARY</p>
         <p>{insight.summary}</p>
-      </article>
-
-      <div className="dimension-grid">
-        {insight.dimensions.map((dimension, index) => (
-          <article className="dimension-card" key={dimension.name}>
-            <span className="dimension-index">0{index + 1}</span>
-            <h3>{dimension.name}</h3>
-            <p>{dimension.observation}</p>
-            <ul>
-              {dimension.evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}
-            </ul>
-          </article>
-        ))}
-      </div>
-
-      <div className="conversation-grid">
-        <article className="interest-card">
-          <p className="panel-kicker">INTEREST SIGNALS</p>
-          <div className="interest-list">
-            {insight.interests.map((interest) => <span key={interest}>{interest}</span>)}
-          </div>
-        </article>
-        <article className="questions-card">
-          <p className="panel-kicker">TRY ASKING</p>
-          <ol>
-            {insight.conversationStarters.map((question) => <li key={question}>{question}</li>)}
-          </ol>
-        </article>
-      </div>
-
-      <p className="disclaimer">{insight.disclaimer}</p>
+      </section>
+      <section className="questions-module">
+        <p className="eyebrow">TALK ABOUT IT TOGETHER</p>
+        <ol>{insight.conversationStarters.map((question) => <li key={question}>{question}</li>)}</ol>
+      </section>
+      <p className="insight-disclaimer">{insight.disclaimer}</p>
     </div>
   );
 }
 
-function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
+function RadarChart({ dimensions }: { dimensions: readonly CreativeDimensionValue[] }) {
+  const center = 160;
+  const radius = 105;
+  const gridLevels = [1, 2, 3, 4];
+  const point = (index: number, scale: number) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / 6;
+    return [center + Math.cos(angle) * radius * scale, center + Math.sin(angle) * radius * scale];
+  };
+  const polygon = (scales: readonly number[]) =>
+    scales.map((scale, index) => point(index, scale).map((value) => value.toFixed(2)).join(',')).join(' ');
+
   return (
-    <div className="error-notice" role="alert">
-      <span>{message}</span>
-      <button onClick={onRetry} type="button">Try again</button>
-    </div>
+    <svg
+      aria-labelledby="radar-title radar-description"
+      className="radar-chart"
+      role="img"
+      viewBox="0 0 320 320"
+    >
+      <title id="radar-title">Creative practice radar across this child&apos;s portfolio</title>
+      <desc id="radar-description">
+        Six evidence levels from zero to four. Higher positions mean more supporting portfolio evidence,
+        not greater ability.
+      </desc>
+      {gridLevels.map((level) => (
+        <polygon className="radar-grid" key={level} points={polygon(Array(6).fill(level / 4))} />
+      ))}
+      {dimensions.map((dimension, index) => {
+        const [x, y] = point(index, 1);
+        return <line className="radar-axis" key={dimension.key} x1={center} x2={x} y1={center} y2={y} />;
+      })}
+      <polygon
+        className="radar-value"
+        points={polygon(dimensions.map((dimension) => dimension.level / 4))}
+      />
+      {dimensions.map((dimension, index) => {
+        const [x, y] = point(index, Math.max(dimension.level / 4, 0.04));
+        return <circle className="radar-point" cx={x} cy={y} key={dimension.key} r="4" />;
+      })}
+      {dimensions.map((dimension, index) => {
+        const [x, y] = point(index, 1.26);
+        return (
+          <text className="radar-label" key={dimension.key} textAnchor="middle" x={x} y={y}>
+            {dimensionLabel(dimension.key)}
+          </text>
+        );
+      })}
+    </svg>
   );
 }
 
-function LoadingState({ label }: { label: string }) {
+function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return (
-    <div className="loading-state" role="status">
-      <span className="loading-mark" aria-hidden="true">✦</span>
-      {label}
-    </div>
+    <header className="page-heading">
+      <p className="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      <p>{description}</p>
+    </header>
   );
 }
 
-function EmptyState() {
+function EmptyChildren({ onLink }: { onLink: () => void }) {
   return (
-    <div className="empty-state">
+    <section className="empty-children">
       <span aria-hidden="true">✦</span>
-      <h3>No projects yet</h3>
-      <p>Alex's games will appear here after the first creation in the ImagineLab app.</p>
-    </div>
+      <h1>Connect your first child.</h1>
+      <p>Ask them to open their ImagineLab account card and share the Child ID.</p>
+      <button className="primary-button" onClick={onLink} type="button">Enter Child ID</button>
+    </section>
   );
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(
-    new Date(value),
-  );
+function EmptyCard({ title, copy }: { title: string; copy: string }) {
+  return <div className="empty-card"><span aria-hidden="true">☄️</span><h2>{title}</h2><p>{copy}</p></div>;
+}
+
+function PageLoader() {
+  return <div className="page-loader" aria-live="polite"><span aria-hidden="true">✦</span> Loading…</div>;
+}
+
+function ErrorNotice({ message }: { message: string }) {
+  return <div className="error-notice" role="alert">{message}</div>;
+}
+
+function dimensionLabel(key: CreativeDimensionKey): string {
+  return {
+    imagination: 'Imagination',
+    expression: 'Expression',
+    game_design: 'Game Design',
+    experimentation: 'Experimentation',
+    iteration: 'Iteration',
+    reflection: 'Reflection',
+  }[key];
 }
 
 function activityLabel(type: ActivityEvent['type']): string {
-  const labels: Record<ActivityEvent['type'], string> = {
+  return {
     create: 'Created a new game',
-    edit: 'Built a new version',
+    edit: 'Improved a game version',
+    playtest: 'Recorded a playtest',
+    reflection: 'Added a reflection',
     publish: 'Published a game',
-    unpublish: 'Unpublished a game',
-    insight_generated: 'Generated a parent observation',
-  };
-  return labels[type];
+    unpublish: 'Returned a game to draft',
+    insight_generated: 'Generated a project insight',
+  }[type];
+}
+
+function activityIcon(type: ActivityEvent['type']): string {
+  return { create: '✎', edit: '✦', playtest: '★', reflection: '♡', publish: '↗', unpublish: '↙', insight_generated: '◇' }[type];
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function possessive(name: string): string {
+  return name.endsWith('s') ? `${name}'` : `${name}'s`;
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 }
 
 function messageFrom(error: unknown): string {
