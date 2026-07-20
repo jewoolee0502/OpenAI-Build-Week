@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import { ApiError, imagineLabApi } from '@/api/client';
-import type { ChildAccount, GameProject, GuestSession } from '@/api/types';
+import type { BuilderDraft, ChildAccount, GameProject, GuestSession } from '@/api/types';
 import { childSessionStorage } from '@/state/child-session-storage';
 
 interface AppStateValue {
@@ -25,6 +25,11 @@ interface AppStateValue {
   editProject: (projectId: string, instruction: string) => Promise<GameProject>;
   publishProject: (projectId: string) => Promise<{ project: GameProject; publicUrl: string }>;
   unpublishProject: (projectId: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
+  loadBuilderDraft: (projectId: string) => Promise<BuilderDraft | null>;
+  saveBuilderDraft: (projectId: string, draft: BuilderDraft) => Promise<BuilderDraft>;
+  generateSceneVariants: (projectId: string) => Promise<BuilderDraft>;
+  testBuilderGame: (projectId: string) => Promise<GameProject>;
   transcribeAudio: (uri: string) => Promise<string>;
   clearError: () => void;
 }
@@ -230,6 +235,38 @@ export function AppProvider({ children }: PropsWithChildren) {
     [requireToken],
   );
 
+  const deleteProject = useCallback(async (projectId: string) => {
+    begin();
+    try {
+      await imagineLabApi.deleteProject(requireToken(), projectId);
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+    } catch (error) { fail(error); throw error; } finally { end(); }
+  }, [begin, end, fail, requireToken]);
+
+  const loadBuilderDraft = useCallback(
+    (projectId: string) => imagineLabApi.loadBuilderDraft(requireToken(), projectId),
+    [requireToken],
+  );
+
+  const saveBuilderDraft = useCallback(
+    (projectId: string, draft: BuilderDraft) => imagineLabApi.saveBuilderDraft(requireToken(), projectId, draft),
+    [requireToken],
+  );
+
+  const generateSceneVariants = useCallback(
+    (projectId: string) => imagineLabApi.generateSceneVariants(requireToken(), projectId),
+    [requireToken],
+  );
+
+  const testBuilderGame = useCallback(async (projectId: string) => {
+    begin();
+    try {
+      const response = await imagineLabApi.testBuilderGame(requireToken(), projectId);
+      replaceProject(response.project);
+      return response.project;
+    } catch (error) { fail(error); throw error; } finally { end(); }
+  }, [begin, end, fail, replaceProject, requireToken]);
+
   const clearError = useCallback(() => setErrorMessage(null), []);
 
   const value = useMemo<AppStateValue>(
@@ -245,6 +282,11 @@ export function AppProvider({ children }: PropsWithChildren) {
       editProject,
       publishProject,
       unpublishProject,
+      deleteProject,
+      loadBuilderDraft,
+      saveBuilderDraft,
+      generateSceneVariants,
+      testBuilderGame,
       transcribeAudio,
       clearError,
     }),
@@ -260,6 +302,11 @@ export function AppProvider({ children }: PropsWithChildren) {
       editProject,
       publishProject,
       unpublishProject,
+      deleteProject,
+      loadBuilderDraft,
+      saveBuilderDraft,
+      generateSceneVariants,
+      testBuilderGame,
       transcribeAudio,
       clearError,
     ],

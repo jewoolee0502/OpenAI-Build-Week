@@ -314,6 +314,91 @@ describe("ImagineLab API", () => {
     });
     expect(response.statusCode).toBe(403);
   });
+
+  it("saves a child canvas draft, offers design ideas, and requires a selection before testing", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A bird flies through a friendly forest" },
+    });
+    const projectId = created.json().project.id as string;
+    const draft = {
+      stage: "build",
+      interpretationStatus: "pending",
+      interpretation: null,
+      assets: [
+        {
+          id: "2e312623-493f-4632-8d84-a03ec57e352a",
+          kind: "background",
+          name: "My forest",
+          imageDataUrl: "data:image/png;base64,abc",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          zIndex: 0,
+        },
+      ],
+      variants: [],
+      selectedVariantId: null,
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${projectId}/builder`,
+      headers: childHeaders(childToken),
+      payload: { draft },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const variants = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/variants`,
+      headers: childHeaders(childToken),
+    });
+    expect(variants.statusCode).toBe(200);
+    expect(variants.json().draft.variants).toHaveLength(4);
+
+    const withoutSelection = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/test`,
+      headers: childHeaders(childToken),
+    });
+    expect(withoutSelection.statusCode).toBe(422);
+  });
+
+  it("deletes only the owner's project and removes its public game", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A little moon garden" },
+    });
+    const projectId = created.json().project.id as string;
+    const published = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/publish`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    const publicPath = new URL(published.json().publicUrl).pathname;
+
+    const denied = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${projectId}`,
+      headers: { authorization: `Bearer ${(await createGuest(app)).token}` },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${projectId}`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect((await app.inject({ method: "GET", url: `/api/projects/${projectId}`, headers: childHeaders(childToken) })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: publicPath })).statusCode).toBe(404);
+  });
 });
 
 function childHeaders(token: string): Record<string, string> {

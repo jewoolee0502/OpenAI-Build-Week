@@ -65,11 +65,11 @@ export default function ChildHomeScreen() {
       const project = await createProject(idea);
       setPrompt('');
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      openProject(project);
+      router.push({ pathname: '/builder/[projectId]', params: { projectId: project.id } });
     } catch {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [createProject, openProject, prompt]);
+  }, [createProject, prompt, router]);
 
   const handleVoiceTranscript = useCallback((transcript: string) => {
     setPrompt((current) => joinPrompt(current, transcript));

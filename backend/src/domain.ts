@@ -6,6 +6,41 @@ export type UserRole = z.infer<typeof userRoleSchema>;
 export const projectStatusSchema = z.enum(["draft", "published"]);
 export type ProjectStatus = z.infer<typeof projectStatusSchema>;
 
+export const builderStageSchema = z.enum(["build", "choose_design", "test", "ready_to_publish"]);
+export type BuilderStage = z.infer<typeof builderStageSchema>;
+
+export const canvasAssetSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["background", "object"]),
+  name: z.string().trim().min(1).max(80),
+  imageDataUrl: z.string().max(5_000_000),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0.05).max(1),
+  height: z.number().min(0.05).max(1),
+  zIndex: z.number().int().min(0).max(100),
+});
+export type CanvasAsset = z.infer<typeof canvasAssetSchema>;
+
+export const sceneVariantSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1).max(80),
+  description: z.string().min(1).max(240),
+  previewDataUrl: z.string().max(2_000_000),
+});
+export type SceneVariant = z.infer<typeof sceneVariantSchema>;
+
+export const builderDraftSchema = z.object({
+  stage: builderStageSchema,
+  interpretationStatus: z.enum(["pending", "ready", "failed"]),
+  interpretation: z.string().max(500).nullable(),
+  assets: z.array(canvasAssetSchema).max(30),
+  variants: z.array(sceneVariantSchema).max(4),
+  selectedVariantId: z.string().uuid().nullable(),
+  updatedAt: z.string(),
+});
+export type BuilderDraft = z.infer<typeof builderDraftSchema>;
+
 export const activityTypeSchema = z.enum([
   "create",
   "edit",
@@ -63,6 +98,7 @@ export interface Project {
   publicSlug: string | null;
   createdAt: string;
   updatedAt: string;
+  builder?: BuilderDraft;
 }
 
 export interface ActivityEvent {
@@ -187,4 +223,8 @@ export const guardianLoginBodySchema = guardianRegistrationBodySchema.pick({
 
 export const linkChildBodySchema = z.object({
   childId: z.string().trim().toUpperCase().regex(/^KID-[A-Z2-9]{4}-[A-Z2-9]{4}$/),
+});
+
+export const saveBuilderBodySchema = z.object({
+  draft: builderDraftSchema,
 });
