@@ -7,6 +7,7 @@ import {
   type ActivityEvent,
   type ActivityType,
   type AuthenticatedUser,
+  type BuilderDraft,
   type ChildAccount,
   type ChildInsight,
   type GuardianAccount,
@@ -70,6 +71,8 @@ export interface ApplicationStore {
   listProjectsWithVersionsForChild(childUserId: string): Promise<ProjectWithVersions[]>;
   getProject(projectId: string): Promise<ProjectWithCurrentVersion | null>;
   getProjectProfileImage(projectId: string): Promise<ProjectProfileImage | null>;
+  deleteProject(projectId: string): Promise<boolean>;
+  saveBuilderDraft(projectId: string, draft: BuilderDraft): Promise<ProjectWithCurrentVersion | null>;
   getVersions(projectId: string): Promise<ProjectVersion[]>;
   getActivities(childUserId: string, projectId?: string): Promise<ActivityEvent[]>;
   setPublished(projectId: string, published: boolean): Promise<ProjectWithCurrentVersion | null>;
@@ -112,6 +115,7 @@ interface ProjectRow extends QueryResultRow {
   public_slug: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  builder_draft: BuilderDraft | null;
   version_id?: string;
   version_number?: number;
   version_prompt?: string;
@@ -460,6 +464,22 @@ export class PostgresStore implements ApplicationStore {
       fallbackReason: row.fallback_reason,
       createdAt: iso(row.created_at),
     };
+  }
+
+  public async deleteProject(projectId: string): Promise<boolean> {
+    const result = await this.database.pool.query("delete from projects where id = $1", [projectId]);
+    return result.rowCount === 1;
+  }
+
+  public async saveBuilderDraft(
+    projectId: string,
+    draft: BuilderDraft,
+  ): Promise<ProjectWithCurrentVersion | null> {
+    const result = await this.database.pool.query(
+      `update projects set builder_draft = $2::jsonb, updated_at = now() where id = $1`,
+      [projectId, JSON.stringify(draft)],
+    );
+    return result.rowCount === 1 ? this.getProject(projectId) : null;
   }
 
   public async getVersions(projectId: string): Promise<ProjectVersion[]> {
@@ -824,6 +844,7 @@ function projectFromRow(row: ProjectRow): Project {
     profileImageUrl: `/api/projects/${row.id}/profile-image`,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+    ...(row.builder_draft ? { builder: row.builder_draft } : {}),
   };
 }
 

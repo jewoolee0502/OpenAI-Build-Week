@@ -2,7 +2,7 @@
 
 ## 1. Product Summary
 
-ImagineLab is an Android-first platform that lets elementary-school students turn natural-language ideas into small, playable browser games. Children use a React Native Expo app designed for phones and tablets. A student describes a game, the platform generates a self-contained HTML, CSS, and JavaScript game, and the student can continue refining it by chat. When ready, the student publishes the game to a public HTML link hosted by the product's server.
+ImagineLab is an Android-first platform that lets elementary-school students turn natural-language ideas and their own drawings into small, playable browser games. Children use a React Native Expo app designed for phones and tablets. A student describes a game, draws a background and game objects, composes one game canvas, chooses an AI visual interpretation, and tests a self-contained HTML, CSS, and JavaScript game before publishing it to a public link.
 
 A separate responsive parent website shows guardians the child's projects and creative process. It can generate evidence-based AI observations about how a specific project developed, including creative exploration, iteration, problem solving, follow-through, communication, and supported interest signals. These observations are conversation aids, not scores, rankings, diagnoses, or predictions of a child's fixed abilities or potential.
 
@@ -29,7 +29,7 @@ The product also makes the creative process itself part of the learning. As chil
 
 - Native Android game export or app-store publishing.
 - Multiplayer games, chat, comments, likes, or social feeds.
-- A visual block editor, custom asset uploads, or manual source-code editing.
+- Manual source-code editing, multi-level world editing, or custom asset uploads from outside the app.
 - Games beyond a simple single-page HTML/CSS/JavaScript bundle.
 - Teacher/classroom administration features.
 - Payments, subscriptions, or advertising.
@@ -55,6 +55,8 @@ The product also makes the creative process itself part of the learning. As chil
 
 - As a child, I can create an account and link it to a guardian account.
 - As a child, I can write an idea such as “make a game where a frog catches flies” and receive a playable game.
+- As a child, I can draw a background and named game objects, arrange them on one canvas, and save my work to continue later.
+- As a child, I can choose from several AI visual interpretations of my canvas before testing the game.
 - As a child, I can hold a talk button, describe a game or change aloud, and receive editable transcribed text.
 - As a child, I can play my game inside the mobile app.
 - As a child, I can ask for a change such as “make it faster” or “add three lives,” then preview the updated game.
@@ -115,6 +117,8 @@ The product also makes the creative process itself part of the learning. As chil
 ### Game generation and editing
 
 - Accept a short natural-language game brief.
+- Let a child draw a background and game objects inside the app, name objects, arrange them on one canvas, and save/resume the draft.
+- Generate three to four coherent visual interpretations of the child’s saved canvas; require a child selection before generating a playable test build.
 - Support push-to-talk input for creation and edit prompts: hold to record, release to transcribe, and keep the resulting text editable before submission.
 - Limit each voice recording to 30 seconds and do not persist the raw audio after transcription.
 - Generate a self-contained, basic HTML/CSS/JavaScript game bundle.
