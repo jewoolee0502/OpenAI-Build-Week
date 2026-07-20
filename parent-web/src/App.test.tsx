@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,6 +60,30 @@ describe('Parent Portal', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/not an educational or psychological assessment/i)).toBeInTheDocument();
   });
+
+  it("shows one child-level insight across the portfolio without a project selector", async () => {
+    const fetchMock = vi.fn(parentApiFixture);
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Insights' }));
+
+    expect(
+      await screen.findByRole('heading', { name: "Maya's creative portfolio" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Project evidence')).not.toBeInTheDocument();
+    expect(screen.getByText('1 project · 0–4 evidence states')).toBeInTheDocument();
+    expect(screen.getByText(/patterns across all available games/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh child insight' }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `http://localhost:8080/api/guardian/children/${child.id}/insight`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+  });
 });
 
 async function parentApiFixture(input: RequestInfo | URL): Promise<Response> {
@@ -75,7 +99,7 @@ async function parentApiFixture(input: RequestInfo | URL): Promise<Response> {
   if (url.endsWith(`/api/guardian/children/${child.id}/projects`)) {
     return jsonResponse({ projects: [project], activities: [activity] });
   }
-  if (url.endsWith(`/api/guardian/children/${child.id}/projects/${project.id}/insight`)) {
+  if (url.endsWith(`/api/guardian/children/${child.id}/insight`)) {
     return jsonResponse({ insight });
   }
   return jsonResponse({ error: `Unhandled test URL: ${url}` }, 404);
@@ -146,17 +170,18 @@ const activity = {
 
 const insight = {
   id: '55555555-5555-4555-8555-555555555555',
-  projectId: project.id,
   childUserId: child.id,
+  scope: 'portfolio',
+  sourceProjectIds: [project.id],
   createdAt: '2026-07-19T12:00:00.000Z',
-  summary: 'Maya turned a playful space idea into a game and revised its challenge.',
+  summary: 'Patterns across all available games show how Maya turns playful themes into game ideas and returns to revise them.',
   dimensions: [
     { name: 'Creative exploration', observation: 'A distinct world was described.', evidence: ['Space penguin'] },
     { name: 'Iteration', observation: 'The game changed.', evidence: ['Added three lives'] },
   ],
   interests: ['space', 'animals'],
   conversationStarters: ['What would you add next?', 'Which change helped the player most?'],
-  disclaimer: 'Project-based observations — not an educational or psychological assessment.',
+  disclaimer: 'Portfolio-based observations — not an educational or psychological assessment.',
   radar: {
     rubricVersion: 'creative-practice-v1',
     dimensions: [
@@ -171,5 +196,5 @@ const insight = {
 };
 
 function radarValue(key: string, level: number, label: string) {
-  return { key, level, label, observation: `${label} in this project.`, evidence: ['Project evidence'] };
+  return { key, level, label, observation: `${label} across the available portfolio.`, evidence: ['Space Penguin project evidence'] };
 }

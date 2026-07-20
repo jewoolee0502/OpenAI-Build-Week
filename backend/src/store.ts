@@ -8,6 +8,7 @@ import {
   type ActivityType,
   type AuthenticatedUser,
   type ChildAccount,
+  type ChildInsight,
   type GuardianAccount,
   type LinkedChild,
   type Project,
@@ -77,6 +78,14 @@ export interface ApplicationStore {
     content: ProjectInsightContent;
   }): Promise<ProjectInsight>;
   getLatestInsight(projectId: string): Promise<ProjectInsight | null>;
+  saveChildInsight(input: {
+    childUserId: string;
+    requestedByGuardianUserId: string;
+    sourceProjectIds: string[];
+    sourceVersionIds: string[];
+    content: ProjectInsightContent;
+  }): Promise<ChildInsight>;
+  getLatestChildInsight(childUserId: string): Promise<ChildInsight | null>;
 }
 
 interface UserRow extends QueryResultRow {
@@ -126,8 +135,10 @@ interface ActivityRow extends QueryResultRow {
 
 interface InsightRow extends QueryResultRow {
   id: string;
-  project_id: string;
+  project_id: string | null;
   child_user_id: string;
+  scope: "project" | "portfolio";
+  source_project_ids: string[];
   summary: string;
   dimensions: unknown;
   interests: unknown;
@@ -494,9 +505,9 @@ export class PostgresStore implements ApplicationStore {
       const insightResult = await client.query<InsightRow>(
         `insert into project_insights (
            child_user_id, project_id, requested_by_guardian_user_id, summary,
-           dimensions, interests, conversation_starters, disclaimer
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8)
-         returning *, $9::text as rubric_version`,
+           dimensions, interests, conversation_starters, disclaimer, scope, source_project_ids
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, 'project', $9::uuid[])
+         returning *, $10::text as rubric_version`,
         [
           input.project.childUserId,
           input.project.id,
@@ -506,6 +517,7 @@ export class PostgresStore implements ApplicationStore {
           JSON.stringify(content.interests),
           JSON.stringify(content.conversationStarters),
           content.disclaimer,
+          [input.project.id],
           content.radar.rubricVersion,
         ],
       );
@@ -548,7 +560,7 @@ export class PostgresStore implements ApplicationStore {
       );
       return {
         id: insightRow.id,
-        projectId: insightRow.project_id,
+        projectId: input.project.id,
         childUserId: insightRow.child_user_id,
         createdAt: iso(insightRow.created_at),
         ...content,
@@ -561,12 +573,112 @@ export class PostgresStore implements ApplicationStore {
       `select i.*, s.rubric_version
        from project_insights i
        join creative_dimension_snapshots s on s.insight_id = i.id
-       where i.project_id = $1
+       where i.project_id = $1 and i.scope = 'project'
        order by i.created_at desc limit 1`,
       [projectId],
     );
     const row = insightResult.rows[0];
+    if (!row?.project_id) return null;
+    const parsed = await this.loadInsightContent(row);
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      childUserId: row.child_user_id,
+      createdAt: iso(row.created_at),
+      ...parsed,
+    };
+  }
+
+  public async saveChildInsight(input: {
+    childUserId: string;
+    requestedByGuardianUserId: string;
+    sourceProjectIds: string[];
+    sourceVersionIds: string[];
+    content: ProjectInsightContent;
+  }): Promise<ChildInsight> {
+    const content = projectInsightSchema.parse(input.content);
+    return this.database.transaction(async (client) => {
+      const insightResult = await client.query<InsightRow>(
+        `insert into project_insights (
+           child_user_id, project_id, requested_by_guardian_user_id, summary,
+           dimensions, interests, conversation_starters, disclaimer, scope, source_project_ids
+         ) values ($1, null, $2, $3, $4, $5, $6, $7, 'portfolio', $8::uuid[])
+         returning *, $9::text as rubric_version`,
+        [
+          input.childUserId,
+          input.requestedByGuardianUserId,
+          content.summary,
+          JSON.stringify(content.dimensions),
+          JSON.stringify(content.interests),
+          JSON.stringify(content.conversationStarters),
+          content.disclaimer,
+          input.sourceProjectIds,
+          content.radar.rubricVersion,
+        ],
+      );
+      const insightRow = requiredRow(insightResult.rows[0]);
+      const snapshotResult = await client.query<{ id: string }>(
+        `insert into creative_dimension_snapshots (
+           child_user_id, project_id, insight_id, scope, rubric_version, source_version_ids
+         ) values ($1, null, $2, 'portfolio', $3, $4::uuid[])
+         returning id`,
+        [
+          input.childUserId,
+          insightRow.id,
+          content.radar.rubricVersion,
+          input.sourceVersionIds,
+        ],
+      );
+      const snapshotId = requiredRow(snapshotResult.rows[0]).id;
+      for (const dimension of content.radar.dimensions) {
+        await client.query(
+          `insert into creative_dimension_values (
+             snapshot_id, dimension, level, label, observation, evidence
+           ) values ($1, $2, $3, $4, $5, $6)`,
+          [
+            snapshotId,
+            dimension.key,
+            dimension.level,
+            dimension.label,
+            dimension.observation,
+            JSON.stringify(dimension.evidence),
+          ],
+        );
+      }
+      return {
+        id: insightRow.id,
+        childUserId: insightRow.child_user_id,
+        scope: "portfolio",
+        sourceProjectIds: insightRow.source_project_ids,
+        createdAt: iso(insightRow.created_at),
+        ...content,
+      };
+    });
+  }
+
+  public async getLatestChildInsight(childUserId: string): Promise<ChildInsight | null> {
+    const insightResult = await this.database.pool.query<InsightRow>(
+      `select i.*, s.rubric_version
+       from project_insights i
+       join creative_dimension_snapshots s on s.insight_id = i.id
+       where i.child_user_id = $1 and i.scope = 'portfolio'
+       order by i.created_at desc limit 1`,
+      [childUserId],
+    );
+    const row = insightResult.rows[0];
     if (!row) return null;
+    const parsed = await this.loadInsightContent(row);
+    return {
+      id: row.id,
+      childUserId: row.child_user_id,
+      scope: "portfolio",
+      sourceProjectIds: row.source_project_ids,
+      createdAt: iso(row.created_at),
+      ...parsed,
+    };
+  }
+
+  private async loadInsightContent(row: InsightRow): Promise<ProjectInsightContent> {
     const radarResult = await this.database.pool.query<RadarValueRow>(
       `select v.dimension, v.level, v.label, v.observation, v.evidence
        from creative_dimension_values v
@@ -578,7 +690,7 @@ export class PostgresStore implements ApplicationStore {
        )`,
       [row.id],
     );
-    const parsed = projectInsightSchema.parse({
+    return projectInsightSchema.parse({
       summary: row.summary,
       dimensions: row.dimensions,
       interests: row.interests,
@@ -595,13 +707,6 @@ export class PostgresStore implements ApplicationStore {
         })),
       },
     });
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      childUserId: row.child_user_id,
-      createdAt: iso(row.created_at),
-      ...parsed,
-    };
   }
 
   private async insertActivity(

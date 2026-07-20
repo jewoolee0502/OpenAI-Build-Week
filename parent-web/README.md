@@ -9,7 +9,7 @@ The guiding principle is:
 
 > AI summarizes the child's creative process. It does not evaluate the child.
 
-Insights must be grounded in project evidence. The portal must not score, rank, diagnose, compare,
+Insights must be grounded in named evidence from the child's portfolio. The portal must not score, rank, diagnose, compare,
 predict a career, or claim fixed traits, intelligence, ability, or potential.
 
 ## Design reference
@@ -106,7 +106,7 @@ rather than raw voice transcripts.
 
 ## Page 3: Insights
 
-Insights is an evidence dashboard across several projects. It answers:
+Insights is one child-level evidence dashboard across the full available portfolio. It answers:
 
 - How has my child approached making games?
 - Which concepts have appeared in their work?
@@ -126,15 +126,16 @@ dimensions:
 5. **Iteration** — changing a project in response to playtesting or a discovered problem.
 6. **Reflection** — explaining decisions, challenges, proud moments, and possible next steps.
 
-The hexagon represents **evidence observed in the selected projects and period**, not a measurement
+The hexagon represents **evidence observed across the child's available projects**, not a measurement
 of the child's ability. It must not display percentages, grades, peer benchmarks, or an overall
 score.
 
-Use evidence states such as:
+Use the `0–4` evidence-state rubric:
 
-- `First signal` — observed in one project.
-- `Repeated signal` — observed more than once.
-- `Seen across projects` — supported by several projects.
+- `Emerging` — an initial supported signal.
+- `Demonstrated` — clear supporting evidence is available.
+- `Repeated` — the evidence recurs.
+- `Sustained` — the evidence recurs across a broader body of work.
 - `Not enough evidence` — no supported conclusion yet.
 
 Selecting a dimension opens an evidence panel containing:
@@ -154,7 +155,7 @@ Selecting a dimension opens an evidence panel containing:
 - **In their own words:** child-authored reflections, never an AI-generated quote.
 - **Conversation starters:** questions connected to recent project decisions.
 - **Sharing overview:** current draft and published states with links to public games.
-- A visible disclaimer: `Project-based observations — not an educational or psychological assessment.`
+- A visible disclaimer: `Portfolio-based observations — not an educational, psychological, or skills assessment.`
 
 ## Evidence model
 

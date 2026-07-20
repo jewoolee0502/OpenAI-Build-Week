@@ -15,7 +15,7 @@
 .auth-card { align-self: center; width: min(100% - 48px, 510px); margin: 40px auto; padding: clamp(30px, 5vw, 54px); border: 1px solid var(--line); border-radius: 32px; background: rgba(255,255,255,.95); box-shadow: 0 28px 80px rgba(45,27,91,.13); }
 .auth-card h2 { margin: 8px 0 10px; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.05; }
 .auth-card form { display: grid; gap: 18px; margin-top: 28px; }
-.auth-card label, .link-panel label, .project-picker { display: grid; gap: 8px; color: #3a3150; font-size: .86rem; font-weight: 800; }
+.auth-card label, .link-panel label { display: grid; gap: 8px; color: #3a3150; font-size: .86rem; font-weight: 800; }
 input, select { min-height: 46px; border: 1px solid #d9d2e6; border-radius: 13px; padding: 0 14px; color: var(--ink); background: #fff; }
 input:focus, select:focus { outline: 3px solid rgba(106,62,207,.2); border-color: var(--purple-bright); }
 .switch-auth { width: 100%; margin-top: 19px; border: 0; background: none; color: var(--purple-bright); cursor: pointer; font-weight: 800; }
@@ -98,8 +98,9 @@ input:focus, select:focus { outline: 3px solid rgba(106,62,207,.2); border-color
 .timeline-event h2 { margin: 5px 0; font-size: 1.2rem; }
 .timeline-event p { margin: 0; color: var(--muted); }
 
-.project-picker { width: min(100%, 360px); margin: -10px 0 28px; }
 .insight-dashboard { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 20px; }
+.snapshot-toolbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #dfd4ef; border-radius: 18px; padding: 15px 18px; background: #f8f4ff; }
+.snapshot-toolbar time { display: block; margin-top: 5px; color: var(--muted); font-size: .8rem; }
 .radar-card, .evidence-card, .summary-module, .questions-module { border: 1px solid var(--line); border-radius: 24px; padding: 26px; background: #fff; box-shadow: 0 8px 24px rgba(52,28,91,.06); }
 .card-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
 .card-heading h2 { margin: 6px 0 0; font-size: 1.7rem; }
@@ -168,5 +169,6 @@ input:focus, select:focus { outline: 3px solid rgba(106,62,207,.2); border-color
   .project-meta { grid-template-columns: auto auto; }
   .project-meta time { grid-column: 1 / -1; justify-self: start; }
   .dimension-controls { grid-template-columns: 1fr; }
+  .snapshot-toolbar { align-items: stretch; flex-direction: column; }
   .radar-card, .evidence-card, .summary-module, .questions-module { padding: 19px; }
 }

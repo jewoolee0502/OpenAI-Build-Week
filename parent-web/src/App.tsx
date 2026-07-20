@@ -3,13 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, parentApi, publicGameUrl } from './api';
 import type {
   ActivityEvent,
+  ChildInsight,
   CreativeDimensionKey,
   CreativeDimensionValue,
   GameProject,
   GuardianDashboard,
   GuardianUser,
   LinkedChild,
-  ProjectInsight,
 } from './types';
 import './App.css';
 
@@ -507,71 +507,65 @@ function ActivityPage({
 }
 
 function InsightsPage({ child, projects }: { child: LinkedChild; projects: GameProject[] }) {
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
-  const selectedProject = projects.find((project) => project.id === projectId) ?? projects[0] ?? null;
-  const [insight, setInsight] = useState<ProjectInsight | null | undefined>(undefined);
+  const [insight, setInsight] = useState<ChildInsight | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    if (!selectedProject) {
-      setInsight(null);
-      return;
-    }
     let active = true;
     setInsight(undefined);
     setError(null);
     void parentApi
-      .loadInsight(child.id, selectedProject.id)
+      .loadInsight(child.id)
       .then((result) => {
         if (active) setInsight(result);
       })
       .catch((loadError: unknown) => {
-        if (active) setError(messageFrom(loadError));
+        if (active) {
+          setInsight(null);
+          setError(messageFrom(loadError));
+        }
       });
     return () => {
       active = false;
     };
-  }, [child.id, selectedProject]);
+  }, [child.id]);
 
   const generate = useCallback(async () => {
-    if (!selectedProject) return;
+    if (projects.length === 0) return;
     setGenerating(true);
     setError(null);
     try {
-      setInsight(await parentApi.generateInsight(child.id, selectedProject.id));
+      setInsight(await parentApi.generateInsight(child.id));
     } catch (generationError) {
       setError(messageFrom(generationError));
     } finally {
       setGenerating(false);
     }
-  }, [child.id, selectedProject]);
+  }, [child.id, projects.length]);
 
   return (
     <section className="page-content insights-page">
       <PageHeading
         eyebrow="CREATIVE INSIGHTS"
         title={`How ${child.displayName} approaches making games`}
-        description="Evidence observed in selected projects — never a grade, ranking, or fixed ability score."
+        description="Evidence observed across the full available portfolio — never a grade, ranking, or fixed ability score."
       />
-      {projects.length > 0 ? (
-        <label className="project-picker">
-          Project evidence
-          <select onChange={(event) => setProjectId(event.target.value)} value={selectedProject?.id ?? ''}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
-          </select>
-        </label>
-      ) : null}
       {error ? <ErrorNotice message={error} /> : null}
       {insight === undefined ? <PageLoader /> : insight ? (
-        <InsightDashboard insight={insight} project={selectedProject!} />
-      ) : selectedProject ? (
+        <InsightDashboard
+          child={child}
+          insight={insight}
+          onRefresh={() => void generate()}
+          refreshing={generating}
+        />
+      ) : projects.length > 0 ? (
         <div className="generate-insight">
           <span aria-hidden="true">✦</span>
-          <h2>Build the first evidence snapshot.</h2>
-          <p>ImagineLab will read this project&apos;s prompts and immutable versions.</p>
+          <h2>Build {child.displayName}&apos;s first portfolio snapshot.</h2>
+          <p>ImagineLab will read all {projects.length} project{projects.length === 1 ? '' : 's'} and their immutable versions.</p>
           <button className="primary-button" disabled={generating} onClick={() => void generate()} type="button">
-            {generating ? 'Reading the project…' : 'Generate project insight'}
+            {generating ? 'Reading the portfolio…' : 'Generate child insight'}
           </button>
         </div>
       ) : (
@@ -581,18 +575,40 @@ function InsightsPage({ child, projects }: { child: LinkedChild; projects: GameP
   );
 }
 
-function InsightDashboard({ insight, project }: { insight: ProjectInsight; project: GameProject }) {
+function InsightDashboard({
+  child,
+  insight,
+  onRefresh,
+  refreshing,
+}: {
+  child: LinkedChild;
+  insight: ChildInsight;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
   const [selectedKey, setSelectedKey] = useState<CreativeDimensionKey>('imagination');
   const selected = insight.radar.dimensions.find((dimension) => dimension.key === selectedKey)!;
+  const projectCount = insight.sourceProjectIds.length;
   return (
     <div className="insight-dashboard">
+      <div className="snapshot-toolbar">
+        <div>
+          <p className="eyebrow">LATEST PORTFOLIO SNAPSHOT</p>
+          <time dateTime={insight.createdAt}>Generated {formatDateTime(insight.createdAt)}</time>
+        </div>
+        <button className="primary-button" disabled={refreshing} onClick={onRefresh} type="button">
+          {refreshing ? 'Refreshing insight…' : 'Refresh child insight'}
+        </button>
+      </div>
       <section className="radar-card">
         <div className="card-heading">
           <div>
             <p className="eyebrow">CREATIVE PRACTICE RADAR</p>
-            <h2>{project.title}</h2>
+            <h2>{possessive(child.displayName)} creative portfolio</h2>
           </div>
-          <span className="evidence-key">0–4 evidence states</span>
+          <span className="evidence-key">
+            {projectCount} project{projectCount === 1 ? '' : 's'} · 0–4 evidence states
+          </span>
         </div>
         <RadarChart dimensions={insight.radar.dimensions} />
         <div className="dimension-controls" aria-label="Creative-practice dimensions">
@@ -616,7 +632,7 @@ function InsightDashboard({ insight, project }: { insight: ProjectInsight; proje
         <ul>{selected.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
       </aside>
       <section className="summary-module">
-        <p className="eyebrow">PROJECT SUMMARY</p>
+        <p className="eyebrow">PORTFOLIO SUMMARY</p>
         <p>{insight.summary}</p>
       </section>
       <section className="questions-module">
@@ -646,9 +662,9 @@ function RadarChart({ dimensions }: { dimensions: readonly CreativeDimensionValu
       role="img"
       viewBox="0 0 320 320"
     >
-      <title id="radar-title">Creative practice radar for this project</title>
+      <title id="radar-title">Creative practice radar across this child&apos;s portfolio</title>
       <desc id="radar-description">
-        Six evidence levels from zero to four. Higher positions mean more supporting project evidence,
+        Six evidence levels from zero to four. Higher positions mean more supporting portfolio evidence,
         not greater ability.
       </desc>
       {gridLevels.map((level) => (

@@ -2,7 +2,7 @@ import type {
   GuardianDashboard,
   GuardianUser,
   LinkedChild,
-  ProjectInsight,
+  ChildInsight,
 } from './types';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8080').replace(
@@ -111,16 +111,16 @@ export const parentApi = {
     return request(`/api/guardian/children/${childUserId}/projects`);
   },
 
-  async loadInsight(childUserId: string, projectId: string): Promise<ProjectInsight | null> {
-    const response = await request<{ insight: ProjectInsight | null }>(
-      `/api/guardian/children/${childUserId}/projects/${projectId}/insight`,
+  async loadInsight(childUserId: string): Promise<ChildInsight | null> {
+    const response = await request<{ insight: ChildInsight | null }>(
+      `/api/guardian/children/${childUserId}/insight`,
     );
     return response.insight;
   },
 
-  async generateInsight(childUserId: string, projectId: string): Promise<ProjectInsight> {
-    const response = await request<{ insight: ProjectInsight }>(
-      `/api/guardian/children/${childUserId}/projects/${projectId}/insight`,
+  async generateInsight(childUserId: string): Promise<ChildInsight> {
+    const response = await request<{ insight: ChildInsight }>(
+      `/api/guardian/children/${childUserId}/insight`,
       { method: 'POST' },
     );
     return response.insight;

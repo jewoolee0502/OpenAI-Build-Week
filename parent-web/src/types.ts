@@ -73,10 +73,11 @@ export interface CreativeDimensionValue {
   evidence: string[];
 }
 
-export interface ProjectInsight {
+export interface ChildInsight {
   id: string;
-  projectId: string;
   childUserId: string;
+  scope: 'portfolio';
+  sourceProjectIds: string[];
   createdAt: string;
   summary: string;
   dimensions: Array<{

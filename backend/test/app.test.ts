@@ -180,6 +180,79 @@ describe("ImagineLab API", () => {
     expect(dashboard.json().projects[0].versions.map((version: { versionNumber: number }) => version.versionNumber)).toEqual([1, 2]);
   });
 
+  it("generates one child-level insight from every project in the linked child's portfolio", async () => {
+    const firstProject = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A bird learns what makes different forest animals happy" },
+    });
+    const secondProject = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A moon rover collects musical crystals" },
+    });
+    const projectIds = [
+      firstProject.json().project.id as string,
+      secondProject.json().project.id as string,
+    ].sort();
+
+    const guardian = await registerGuardian(app, "portfolio-insight@example.com");
+    const unlinkedGuardian = await registerGuardian(app, "unlinked-portfolio@example.com");
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: guardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+
+    const denied = await app.inject({
+      method: "POST",
+      url: `/api/guardian/children/${childUserId}/insight`,
+      headers: { cookie: unlinkedGuardian.cookie },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const generated = await app.inject({
+      method: "POST",
+      url: `/api/guardian/children/${childUserId}/insight`,
+      headers: { cookie: guardian.cookie },
+    });
+
+    expect(generated.statusCode).toBe(201);
+    expect(generated.json().insight.scope).toBe("portfolio");
+    expect([...generated.json().insight.sourceProjectIds].sort()).toEqual(projectIds);
+    expect(generated.json().insight.radar.dimensions).toHaveLength(6);
+
+    const restored = await app.inject({
+      method: "GET",
+      url: `/api/guardian/children/${childUserId}/insight`,
+      headers: { cookie: guardian.cookie },
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json().insight.id).toBe(generated.json().insight.id);
+  });
+
+  it("waits for project evidence before generating a child-level insight", async () => {
+    const guardian = await registerGuardian(app, "empty-portfolio@example.com");
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: guardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/guardian/children/${childUserId}/insight`,
+      headers: { cookie: guardian.cookie },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toContain("at least one project");
+  });
+
   it("keeps the last published version live until a newer draft is published", async () => {
     const createResponse = await app.inject({
       method: "POST",

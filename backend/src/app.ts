@@ -322,6 +322,34 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     };
   });
 
+  app.get("/api/guardian/children/:childUserId/insight", async (request) => {
+    const { childUserId } = childParamsSchema.parse(request.params);
+    await linkedGuardian(request, childUserId);
+    return { insight: await store.getLatestChildInsight(childUserId) };
+  });
+
+  app.post("/api/guardian/children/:childUserId/insight", async (request, reply) => {
+    const { childUserId } = childParamsSchema.parse(request.params);
+    const guardian = await linkedGuardian(request, childUserId);
+    const projects = await store.listProjectsWithVersionsForChild(childUserId);
+    if (projects.length === 0) {
+      const error = new Error("Create at least one project before generating child insights");
+      Object.assign(error, { statusCode: 422 });
+      throw error;
+    }
+    const content = await generation.createChildInsight({ childUserId, projects });
+    const insight = await store.saveChildInsight({
+      childUserId,
+      requestedByGuardianUserId: guardian.id,
+      sourceProjectIds: projects.map((project) => project.id),
+      sourceVersionIds: projects.flatMap((project) =>
+        project.versions.map((version) => version.id),
+      ),
+      content,
+    });
+    return reply.status(201).send({ insight });
+  });
+
   app.get("/api/guardian/children/:childUserId/projects/:projectId/insight", async (request) => {
     const { childUserId, projectId } = guardianProjectParamsSchema.parse(request.params);
     await linkedGuardian(request, childUserId);

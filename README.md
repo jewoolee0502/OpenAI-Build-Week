@@ -17,8 +17,8 @@ evidence-based creative-practice insights.
   activities, creative-process events, insights, and radar evidence snapshots.
 - Prompt-to-game creation, iterative edits, draft/publish/unpublish, public links, and speech-to-text.
 - Separate Parent Portal Portfolio, Activity, and Insights pages.
-- An accessible six-axis Creative Practice Radar backed by `0–4` evidence states and concrete
-  project evidence, never peer comparison or a fixed-ability score.
+- An accessible child-level, six-axis Creative Practice Radar backed by `0–4` evidence states and
+  concrete evidence across the available portfolio, never peer comparison or a fixed-ability score.
 - Fastify authorization for every child, guardian, project, transcription, and insight request.
 - Server-only OpenAI Responses and Audio Transcriptions APIs. No client receives an OpenAI or
   PostgreSQL credential.

@@ -99,26 +99,41 @@ export const evidenceLabelSchema = z.enum([
   "Sustained",
 ]);
 
-function radarDimension<Key extends CreativeDimensionKey>(key: Key) {
-  return z.object({
-    key: z.literal(key),
-    level: evidenceLevelSchema,
-    label: evidenceLabelSchema,
-    observation: z.string().min(1).max(500),
-    evidence: z.array(z.string().min(1).max(240)).min(1).max(3),
+const creativeDimensionOrder = [
+  "imagination",
+  "expression",
+  "game_design",
+  "experimentation",
+  "iteration",
+  "reflection",
+] as const;
+
+const radarDimensionSchema = z.object({
+  key: creativeDimensionKeySchema,
+  level: evidenceLevelSchema,
+  label: evidenceLabelSchema,
+  observation: z.string().min(1).max(500),
+  evidence: z.array(z.string().min(1).max(240)).min(1).max(3),
+});
+
+const radarDimensionsSchema = z
+  .array(radarDimensionSchema)
+  .length(creativeDimensionOrder.length)
+  .superRefine((dimensions, context) => {
+    creativeDimensionOrder.forEach((key, index) => {
+      if (dimensions[index]?.key !== key) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "key"],
+          message: `Expected ${key} at radar position ${index + 1}`,
+        });
+      }
+    });
   });
-}
 
 export const creativePracticeRadarSchema = z.object({
   rubricVersion: z.literal("creative-practice-v1"),
-  dimensions: z.tuple([
-    radarDimension("imagination"),
-    radarDimension("expression"),
-    radarDimension("game_design"),
-    radarDimension("experimentation"),
-    radarDimension("iteration"),
-    radarDimension("reflection"),
-  ]),
+  dimensions: radarDimensionsSchema,
 });
 export type CreativePracticeRadar = z.infer<typeof creativePracticeRadarSchema>;
 
@@ -136,6 +151,14 @@ export interface ProjectInsight extends ProjectInsightContent {
   id: string;
   projectId: string;
   childUserId: string;
+  createdAt: string;
+}
+
+export interface ChildInsight extends ProjectInsightContent {
+  id: string;
+  childUserId: string;
+  scope: "portfolio";
+  sourceProjectIds: string[];
   createdAt: string;
 }
 
