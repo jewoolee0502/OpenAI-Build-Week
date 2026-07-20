@@ -11,13 +11,13 @@ import * as Haptics from 'expo-haptics';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { imagineLabApi } from '@/api/client';
 import { colors, radii, spacing } from '@/theme';
 
 type VoicePhase = 'idle' | 'preparing' | 'recording' | 'transcribing';
 
 interface HoldToTalkButtonProps {
   onTranscript: (text: string) => void;
+  transcribeAudio: (uri: string) => Promise<string>;
 }
 
 const maximumRecordingMilliseconds = 30_000;
@@ -25,6 +25,7 @@ const minimumRecordingMilliseconds = 500;
 
 export const HoldToTalkButton = memo(function HoldToTalkButton({
   onTranscript,
+  transcribeAudio,
 }: HoldToTalkButtonProps) {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
@@ -65,7 +66,7 @@ export const HoldToTalkButton = memo(function HoldToTalkButton({
       if (!recordingUri) throw new Error('The recording could not be saved. Please try again.');
 
       updatePhase('transcribing');
-      const transcript = await imagineLabApi.transcribeAudio(recordingUri);
+      const transcript = await transcribeAudio(recordingUri);
       onTranscript(transcript);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       updatePhase('idle');
@@ -79,7 +80,7 @@ export const HoldToTalkButton = memo(function HoldToTalkButton({
         await deleteAsync(recordingUri, { idempotent: true }).catch(() => undefined);
       }
     }
-  }, [clearMaximumTimer, onTranscript, recorder, updatePhase]);
+  }, [clearMaximumTimer, onTranscript, recorder, transcribeAudio, updatePhase]);
 
   const beginRecording = useCallback(async () => {
     if (phaseRef.current !== 'idle') return;

@@ -1,5 +1,18 @@
 export type ProjectStatus = 'draft' | 'published';
 
+export interface ChildAccount {
+  id: string;
+  role: 'child';
+  displayName: string;
+  childId: string;
+  linked: boolean;
+}
+
+export interface GuestSession {
+  token: string;
+  user: ChildAccount;
+}
+
 export interface GameVersion {
   id: string;
   projectId: string;
