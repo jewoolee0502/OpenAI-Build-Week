@@ -156,13 +156,12 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 | In-app game preview | `react-native-webview` | Runs the generated HTML game inside the Expo app on Android and iOS. |
 | Voice recording | `expo-audio` | Provides Expo Go-compatible microphone recording for bounded push-to-talk requests. |
 | Parent website | React, TypeScript, Vite | Keeps the guardian experience responsive and easy to demo on a laptop without adding parent-only screens to the child app. |
-| Authentication | Firebase Authentication | Supports email/password and Google Sign-In without building authentication infrastructure. |
-| App data | Cloud Firestore | Managed document data for users, guardian links, projects, versions, and activity. |
-| Game bundle storage | Cloud Storage for Firebase | Stores generated HTML/CSS/JavaScript bundles and optional thumbnails. |
-| Backend API | TypeScript, Node.js, Fastify, deployed on Google Cloud Run | Keeps the OpenAI API key off devices; handles generation, authorization, publishing, and public serving. |
+| Authentication and app data | Local PostgreSQL-backed application services | Keeps account, guardian-link, project, version, activity, and insight data in one local relational store. |
+| Game bundle storage | Local PostgreSQL | Stores versioned HTML/CSS/JavaScript bundles with their project-version records for the MVP. |
+| Backend API | TypeScript, Node.js, Fastify | Keeps the OpenAI API key off devices; handles generation, authorization, publishing, and public serving. |
 | AI integration | Official OpenAI server SDK using the Responses API and Audio Transcriptions API | Provides server-side generation, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
-| Public game delivery | Cloud Run public route plus Cloud Storage | Serves a stable `https://<domain>/g/<slug>` link from the product's own backend while game files remain in managed storage. |
-| Client/backend communication | HTTPS JSON API with Firebase ID tokens | Lets the backend verify the signed-in user and enforce project permissions for both clients. |
+| Public game delivery | Fastify public route | Serves a stable `https://<domain>/g/<slug>` link from the product's own backend. |
+| Client/backend communication | HTTPS JSON API with application authentication | Lets the backend authenticate the signed-in user and enforce project permissions for both clients. |
 | Observability | Cloud Logging | Captures backend errors and generation failures for the MVP. |
 | Source control and CI | GitHub and GitHub Actions | Stores source code and runs build/lint/test checks on pull requests. |
 
@@ -170,20 +169,20 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 
 ```text
 Child Expo app (React Native / TypeScript, phone + tablet) ─┐
-Parent website (React / TypeScript / Vite) ─────────────────┼─ Cloud Run API
-                                                           │   ├─ verifies Firebase ID token and role/link permissions
+Parent website (React / TypeScript / Vite) ─────────────────┼─ Fastify API
+                                                           │   ├─ authenticates requests and enforces role/link permissions
                                                            │   ├─ calls OpenAI for generation, edits, parent insights, and transcription
-                                                           │   ├─ writes versions/bundles to Firestore + Cloud Storage
+                                                           │   ├─ writes versions/bundles to local PostgreSQL
                                                            │   └─ serves public route: /g/:slug
                                                            │        └─ sandboxed browser page loads published game bundle
-Firebase Authentication ───────────────────────────────────┘
+Local PostgreSQL ───────────────────────────────────────────┘
 ```
 
 ### Why this stack, rather than alternatives
 
 - Expo and React Native reduce mobile setup time for the hackathon while keeping Android as the primary launch target and preserving an iOS path from the same codebase.
-- Firebase avoids spending hackathon time building email login, Google login, a database, and file storage from scratch.
-- A TypeScript Cloud Run API creates a hard boundary: neither client receives the OpenAI API key or bypasses authorization rules.
+- Local PostgreSQL keeps the MVP's relational account, guardian-link, project, version, and activity data together during development.
+- A TypeScript Fastify API creates a hard boundary: neither client receives the OpenAI API key or bypasses authorization rules.
 - Generated games remain portable static web artifacts, even though the product serves them through its backend.
 
 ## 10. Data Model (MVP)
@@ -196,14 +195,14 @@ Firebase Authentication ──────────────────�
 | `projectVersions` | `id`, `projectId`, `versionNumber`, `prompt`, `bundleStoragePath`, `createdAt` |
 | `activityEvents` | `id`, `childUserId`, `projectId`, `type`, `createdAt`, `metadata` |
 | `projectInsights` | `id`, `childUserId`, `projectId`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
-| Cloud Storage game bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
+| PostgreSQL project bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
 
 ## 11. Safety and Security Requirements
 
 - Never place the OpenAI API key in the Expo app, parent website, or a public game bundle.
 - Send voice recordings only to the authenticated backend transcription endpoint; do not persist raw child audio in project data or activity history.
-- Require Firebase ID-token verification on every authenticated backend endpoint.
-- Enforce child/guardian/project authorization in the backend; do not rely only on Firestore client rules or UI visibility.
+- Require server-side authentication on every authenticated backend endpoint.
+- Enforce child/guardian/project authorization in the backend; do not rely only on client-side checks or UI visibility.
 - Render generated games inside a sandboxed iframe on the public page. The game must not gain access to the parent page, account data, backend credentials, or arbitrary external network destinations.
 - Do not allow generated code to embed secrets or backend credentials.
 - Validate and constrain generated output before saving or publishing it.
@@ -236,9 +235,9 @@ The following are intentionally not assumed in this PRD:
 
 ## 14. Suggested Hackathon Delivery Order
 
-1. Set up Firebase Authentication, Firestore, Cloud Storage, and the React Native Expo shell.
+1. Set up local PostgreSQL and the React Native Expo shell.
 2. Build child account creation, sign-in, and a project list.
-3. Build the Cloud Run generation endpoint and store a versioned HTML game bundle.
+3. Build the Fastify generation endpoint and store a versioned HTML game bundle.
 4. Add WebView preview and natural-language edits.
 5. Add publish/unpublish and the public `/g/:slug` route.
 6. Add the parent website with guardian linking, dashboard, activity timeline, and a project-level AI insight demo.

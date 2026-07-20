@@ -12,7 +12,7 @@ ImagineLab is an Android-first AI game studio for children. The child experience
 - Separate React, TypeScript, and Vite parent website with a project dashboard, activity timeline, sandboxed game preview, and AI insight reports.
 - TypeScript, Fastify, OpenAI Responses API, and Audio Transcriptions API backend.
 - Zod Structured Outputs for game bundles and parent insights.
-- Server-side project authorization with Firebase ID-token support and an isolated local demo mode.
+- Server-side project authorization with an isolated local demo mode.
 - Immutable project versions, separate current and published versions, activity events, and local JSON persistence for development.
 - Generated HTML validation, restrictive CSP, blocked external network capabilities, and sandboxed public hosting.
 - Deterministic local demo generation when `OPENAI_API_KEY` is not set.
@@ -93,20 +93,20 @@ npm run check
 
 ## Demo accounts
 
-Local `AUTH_MODE=dev` is intentionally limited to non-production environments:
+Local demo identities are intentionally limited to non-production environments:
 
 - Child: `demo-child`
 - Linked guardian: `demo-guardian`
 
-The Expo app sends the child demo identity and the parent website sends the guardian demo identity in development headers. Production must set `AUTH_MODE=firebase`, send Firebase ID tokens as bearer tokens, and assign validated `child` or `guardian` role claims server-side.
+The Expo app sends the child demo identity and the parent website sends the guardian demo identity in development headers. Production authentication has not been implemented; the backend rejects authenticated production requests until a local application-auth flow is added.
 
 ## Production work still required
 
-- Create and configure the Firebase project, Authentication providers, Firestore, and Cloud Storage.
-- Add Firebase client configuration to Expo and the parent website, then replace demo identity headers with Firebase ID tokens.
-- Replace local JSON persistence with Firestore metadata and versioned Cloud Storage game bundles.
+- Add a local PostgreSQL database for users, guardian links, projects, versions, activities, and insights.
+- Implement a production-safe application-auth flow, then replace demo identity headers in both clients.
+- Replace local JSON persistence with PostgreSQL-backed project metadata and versioned game bundles.
 - Confirm the unresolved child/guardian consent, linking, publishing, content, launch-region, and game-capability decisions in `PRD.md`.
-- Add content moderation, production telemetry, Cloud Run deployment, EAS builds, and end-to-end Firebase authorization tests.
+- Add content moderation, production telemetry, deployment, EAS builds, and end-to-end authorization tests.
 - Keep the community gallery read-only and moderated until its child-safety policies are confirmed.
 
 See [PRD.md](./PRD.md) for product scope and [AGENTS.md](./AGENTS.md) for non-negotiable engineering constraints.

@@ -7,7 +7,6 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:8080"),
   DATA_FILE: z.string().default(".data/imaginelab.json"),
-  AUTH_MODE: z.enum(["dev", "firebase"]).default("dev"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.6"),
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
@@ -22,7 +21,6 @@ export interface AppConfig {
   port: number;
   publicBaseUrl: string;
   dataFile: string;
-  authMode: "dev" | "firebase";
   openAiApiKey?: string;
   openAiModel: string;
   openAiTranscriptionModel: string;
@@ -37,7 +35,6 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     port: env.PORT,
     publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/$/, ""),
     dataFile: resolve(process.cwd(), env.DATA_FILE),
-    authMode: env.AUTH_MODE,
     openAiModel: env.OPENAI_MODEL,
     openAiTranscriptionModel: env.OPENAI_TRANSCRIPTION_MODEL,
     allowedOrigins: env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()),
