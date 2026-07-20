@@ -1,5 +1,5 @@
 ---
-name: create-pr
+name: open-new-pr
 description: Prepare and safely create a GitHub pull request with an evidence-backed description. Use when asked to open a PR, prepare a branch for review, summarize branch changes, or draft a pull request description. Default the base branch to main unless the user names another base branch; do not create or push a PR unless the user explicitly asks.
 ---
 
