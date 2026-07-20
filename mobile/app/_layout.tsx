@@ -19,6 +19,7 @@ export default function RootLayout() {
             }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="studio/[projectId]" />
+            <Stack.Screen name="builder/[projectId]" />
           </Stack>
           <StatusBar style="light" />
         </AppProvider>

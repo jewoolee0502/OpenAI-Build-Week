@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 import type {
+  BuilderDraft,
   ChildAccount,
   GameProject,
   GuestSession,
@@ -13,8 +14,13 @@ const platformDefaultUrl = Platform.select({
   default: 'http://localhost:8080',
 });
 
+const configuredMobileUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const configuredWebUrl = process.env.EXPO_PUBLIC_WEB_API_BASE_URL?.trim();
+
 export const apiBaseUrl = (
-  process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || platformDefaultUrl
+  Platform.OS === 'web'
+    ? configuredWebUrl || 'http://localhost:8080'
+    : configuredMobileUrl || platformDefaultUrl
 )?.replace(/\/$/, '');
 
 export class ApiError extends Error {
@@ -30,8 +36,8 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   options: {
-    method?: 'GET' | 'POST' | 'DELETE';
-    body?: Record<string, string> | FormData;
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    body?: Record<string, unknown> | FormData;
     token?: string;
   },
 ): Promise<T> {
@@ -110,6 +116,29 @@ export const imagineLabApi = {
 
   unpublishProject(token: string, projectId: string): Promise<void> {
     return request(`/api/projects/${projectId}/publish`, { method: 'DELETE', token });
+  },
+
+  deleteProject(token: string, projectId: string): Promise<void> {
+    return request(`/api/projects/${projectId}`, { method: 'DELETE', token });
+  },
+
+  async loadBuilderDraft(token: string, projectId: string): Promise<BuilderDraft | null> {
+    const response = await request<{ draft: BuilderDraft | null }>(`/api/projects/${projectId}/builder`, { token });
+    return response.draft;
+  },
+
+  async saveBuilderDraft(token: string, projectId: string, draft: BuilderDraft): Promise<BuilderDraft> {
+    const response = await request<{ draft: BuilderDraft }>(`/api/projects/${projectId}/builder`, { method: 'PUT', body: { draft }, token });
+    return response.draft;
+  },
+
+  async generateSceneVariants(token: string, projectId: string): Promise<BuilderDraft> {
+    const response = await request<{ draft: BuilderDraft }>(`/api/projects/${projectId}/builder/variants`, { method: 'POST', token });
+    return response.draft;
+  },
+
+  testBuilderGame(token: string, projectId: string): Promise<ProjectMutationResponse> {
+    return request(`/api/projects/${projectId}/builder/test`, { method: 'POST', token });
   },
 
   async transcribeAudio(token: string, uri: string): Promise<string> {

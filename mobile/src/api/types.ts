@@ -1,4 +1,34 @@
 export type ProjectStatus = 'draft' | 'published';
+export type BuilderStage = 'build' | 'choose_design' | 'test' | 'ready_to_publish';
+
+export interface CanvasAsset {
+  id: string;
+  kind: 'background' | 'object';
+  name: string;
+  imageDataUrl: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+}
+
+export interface SceneVariant {
+  id: string;
+  title: string;
+  description: string;
+  previewDataUrl: string;
+}
+
+export interface BuilderDraft {
+  stage: BuilderStage;
+  interpretationStatus: 'pending' | 'ready' | 'failed';
+  interpretation: string | null;
+  assets: CanvasAsset[];
+  variants: SceneVariant[];
+  selectedVariantId: string | null;
+  updatedAt: string;
+}
 
 export interface ChildAccount {
   id: string;
@@ -33,6 +63,7 @@ export interface GameProject {
   createdAt: string;
   updatedAt: string;
   currentVersion: GameVersion;
+  builder?: BuilderDraft;
 }
 
 export interface GenerationSummary {

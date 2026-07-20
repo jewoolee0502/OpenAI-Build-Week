@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 import { AuthService, guardianSessionCookie } from "./auth.js";
@@ -14,6 +15,8 @@ import {
   guardianLoginBodySchema,
   guardianRegistrationBodySchema,
   linkChildBodySchema,
+  saveBuilderBodySchema,
+  type BuilderDraft,
 } from "./domain.js";
 import { GenerationService } from "./generation.js";
 import { renderPublicGamePage, UnsafeGameBundleError } from "./safety.js";
@@ -68,6 +71,15 @@ function notFound(message: string): Error {
   return error;
 }
 
+function demoSceneVariants(project: ProjectWithCurrentVersion): BuilderDraft["variants"] {
+  const palettes = [["#6D4FCA", "#E58A6E"], ["#24746A", "#8EE6CE"], ["#8D4D9B", "#FFB65E"], ["#305EAA", "#C96D83"]];
+  return palettes.map(([start, end], index) => {
+    const title = ["Moonlight adventure", "Forest friends", "Candy skyline", "Cosmic playground"][index] ?? "Game world";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 720 480"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${start}"/><stop offset="1" stop-color="${end}"/></linearGradient></defs><rect width="720" height="480" fill="url(#g)"/><circle cx="570" cy="100" r="68" fill="#fff" fill-opacity=".25"/><path d="M0 350 Q120 260 240 350 T480 350 T720 350 V480 H0Z" fill="#17142b" fill-opacity=".28"/><text x="36" y="64" fill="white" font-family="sans-serif" font-size="34" font-weight="700">${title}</text></svg>`;
+    return { id: randomUUID(), title, description: `A playful visual direction for ${project.title}.`, previewDataUrl: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}` };
+  });
+}
+
 export interface AppDependencies {
   config: AppConfig;
   store?: ApplicationStore;
@@ -77,7 +89,7 @@ export interface AppDependencies {
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
   const { config } = dependencies;
-  const app = Fastify({ logger: config.nodeEnv !== "test" });
+  const app = Fastify({ bodyLimit: 6 * 1024 * 1024, logger: config.nodeEnv !== "test" });
   const ownedDatabase = dependencies.store
     ? null
     : dependencies.database ?? new Database(config.databaseUrl);
@@ -108,6 +120,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      return reply.status(413).send({ error: "This drawing is too large to save. Try a smaller or simpler drawing." });
+    }
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: "Invalid request",
@@ -212,6 +227,72 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const actor = await user(request);
     requireRole(actor, "child");
     return { projects: await store.listProjectsForChild(actor.id) };
+  });
+
+  app.delete("/api/projects/:projectId", async (request, reply) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    await store.deleteProject(projectId);
+    return reply.status(204).send();
+  });
+
+  app.get("/api/projects/:projectId/builder", async (request) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    return { draft: project.builder ?? null };
+  });
+
+  app.put("/api/projects/:projectId/builder", async (request) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const { draft } = saveBuilderBodySchema.parse(request.body);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    const updated = await store.saveBuilderDraft(projectId, draft);
+    if (!updated?.builder) throw notFound("Project not found");
+    return { draft: updated.builder };
+  });
+
+  app.post("/api/projects/:projectId/builder/variants", async (request) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    if (!project.builder?.assets.some((asset) => asset.kind === "background")) {
+      const error = new Error("Save a background before asking ImagineLab for design ideas");
+      Object.assign(error, { statusCode: 422 });
+      throw error;
+    }
+    const draft: BuilderDraft = { ...project.builder, stage: "choose_design", variants: demoSceneVariants(project), selectedVariantId: null, updatedAt: new Date().toISOString() };
+    const updated = await store.saveBuilderDraft(projectId, draft);
+    return { draft: updated?.builder };
+  });
+
+  app.post("/api/projects/:projectId/builder/test", async (request, reply) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    const selected = project.builder?.variants.find((variant) => variant.id === project.builder?.selectedVariantId);
+    if (!project.builder || !selected) {
+      const error = new Error("Choose a design before testing your game");
+      Object.assign(error, { statusCode: 422 });
+      throw error;
+    }
+    const generated = await generation.createGame(`${project.currentVersion.prompt}. Use the selected visual direction: ${selected.title}.`, actor.id);
+    const updatedProject = await store.addVersion({ projectId, prompt: `Test build: ${selected.title}`, html: generated.html });
+    if (!updatedProject) throw notFound("Project not found");
+    await store.saveBuilderDraft(projectId, { ...project.builder, stage: "ready_to_publish", updatedAt: new Date().toISOString() });
+    return reply.status(201).send({ project: updatedProject, generation: { provider: generated.provider, summary: generated.childFacingSummary } });
   });
 
   app.post("/api/transcriptions", async (request) => {
