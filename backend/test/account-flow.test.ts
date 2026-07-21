@@ -179,7 +179,7 @@ describe("ImagineLab account flows", () => {
 
     expect(insightResponse.statusCode).toBe(201);
     const radar = insightResponse.json().insight.radar;
-    expect(radar.rubricVersion).toBe("creative-practice-v1");
+    expect(radar.rubricVersion).toBe("creative-practice-v2");
     expect(radar.dimensions).toHaveLength(6);
     expect(radar.dimensions.map((dimension: { key: string }) => dimension.key)).toEqual([
       "imagination",
@@ -191,7 +191,7 @@ describe("ImagineLab account flows", () => {
     ]);
     for (const dimension of radar.dimensions) {
       expect(dimension.level).toBeGreaterThanOrEqual(0);
-      expect(dimension.level).toBeLessThanOrEqual(4);
+      expect(dimension.level).toBeLessThanOrEqual(10);
       expect(dimension.evidence.length).toBeGreaterThan(0);
     }
   });

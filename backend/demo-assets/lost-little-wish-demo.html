@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; connect-src 'none'; font-src data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#071437">
+  <meta name="imaginelab-demo-build" content="__BUILD_VERSION__">
+  <title>The Lost Little Wish</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --navy: #071437;
+      --ink: #171431;
+      --cream: #fff7df;
+      --aqua: #68f0e0;
+      --cyan: #7ef7ff;
+      --purple: #7642ed;
+      --coral: #ff745f;
+      --gold: #ffd85f;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #02081d; }
+    body { font-family: "Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif; touch-action: manipulation; user-select: none; }
+    button { font: inherit; }
+
+    #game {
+      position: relative;
+      display: grid;
+      width: 100%;
+      height: 100%;
+      place-items: center;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 20%, #18285b, #02081d 72%);
+    }
+
+    #artboard {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-image: linear-gradient(rgba(3, 10, 34, .08), rgba(3, 10, 34, .14)), url("__BACKGROUND_DATA_URI__");
+      background-position: center;
+      background-size: cover;
+      box-shadow: 0 0 70px rgba(35, 105, 166, .32);
+      isolation: isolate;
+    }
+
+    #artboard.contained {
+      width: min(100vw, 56.25vh);
+      height: min(177.7778vw, 100vh);
+      background-size: 100% 100%;
+    }
+
+    #artboard::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(3, 8, 31, .72) 0%, transparent 18%, transparent 73%, rgba(3, 8, 31, .74) 100%);
+    }
+
+    #hud {
+      position: absolute;
+      z-index: 8;
+      top: max(76px, calc(env(safe-area-inset-top) + 10px));
+      left: 12px;
+      right: 12px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .hud-pill {
+      min-width: 66px;
+      padding: 8px 11px;
+      border: 1.5px solid rgba(255, 255, 255, .45);
+      border-radius: 18px;
+      background: rgba(8, 13, 48, .78);
+      box-shadow: 0 5px 16px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .15);
+      color: white;
+      font-size: clamp(12px, 3.2vw, 16px);
+      font-weight: 900;
+      text-align: center;
+      text-shadow: 0 2px 2px rgba(0, 0, 0, .35);
+    }
+
+    #chapter { color: var(--aqua); letter-spacing: .02em; }
+    #lives { color: #ffcfcb; }
+
+    #mission {
+      position: absolute;
+      z-index: 8;
+      top: max(126px, calc(env(safe-area-inset-top) + 60px));
+      left: 50%;
+      width: min(88%, 430px);
+      transform: translateX(-50%);
+      padding: 9px 14px;
+      border: 1.5px solid rgba(126, 247, 255, .54);
+      border-radius: 17px;
+      background: rgba(5, 14, 48, .76);
+      color: white;
+      font-size: clamp(13px, 3.45vw, 17px);
+      font-weight: 800;
+      line-height: 1.24;
+      text-align: center;
+      text-shadow: 0 2px 2px rgba(0, 0, 0, .4);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
+      transition: transform .16s ease, border-color .16s ease;
+      pointer-events: none;
+    }
+
+    #mission.pop { transform: translateX(-50%) scale(1.035); border-color: var(--gold); }
+
+    #timerTrack {
+      position: absolute;
+      z-index: 8;
+      top: max(176px, calc(env(safe-area-inset-top) + 110px));
+      left: 15%;
+      width: 70%;
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(8, 13, 48, .62);
+      pointer-events: none;
+    }
+
+    #timerBar { width: 100%; height: 100%; transform-origin: left; background: linear-gradient(90deg, var(--aqua), var(--gold)); }
+
+    .spot {
+      position: absolute;
+      z-index: 5;
+      width: clamp(54px, 14.5vw, 84px);
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .spot::before, .spot::after {
+      content: "";
+      position: absolute;
+      inset: 5%;
+      border: 4px solid transparent;
+      border-radius: inherit;
+      opacity: 0;
+      transition: opacity .16s ease, transform .16s ease;
+    }
+
+    .spot.ready::before {
+      opacity: .56;
+      border-color: rgba(126, 247, 255, .72);
+      box-shadow: 0 0 15px var(--cyan);
+    }
+
+    .spot.active::before {
+      opacity: 1;
+      border-color: white;
+      box-shadow: 0 0 0 7px rgba(80, 235, 255, .32), 0 0 28px 12px var(--cyan);
+      animation: listenPulse .72s ease-in-out infinite alternate;
+    }
+
+    .spot.correct::after {
+      opacity: 1;
+      inset: -15%;
+      border-color: var(--gold);
+      animation: collectBurst .45s ease-out forwards;
+    }
+
+    .spot.wrong { animation: shake .28s ease-in-out; }
+
+    #thorn {
+      position: absolute;
+      z-index: 4;
+      left: 80%;
+      top: 53.2%;
+      width: 25%;
+      aspect-ratio: 1.2;
+      transform: translate(-50%, -50%);
+      border: 0;
+      border-radius: 48%;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #thorn.danger { filter: drop-shadow(0 0 10px rgba(255, 116, 95, .55)); }
+    #thorn.bump { animation: shake .28s ease-in-out; }
+
+    #footerHint {
+      position: absolute;
+      z-index: 8;
+      left: 50%;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(88%, 430px);
+      transform: translateX(-50%);
+      padding: 11px 15px;
+      border: 1.5px solid rgba(255, 247, 223, .48);
+      border-radius: 18px;
+      background: rgba(7, 13, 42, .78);
+      color: var(--cream);
+      font-size: clamp(12px, 3.3vw, 16px);
+      font-weight: 800;
+      line-height: 1.25;
+      text-align: center;
+      text-shadow: 0 2px 3px rgba(0, 0, 0, .48);
+      pointer-events: none;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+      background: rgba(2, 8, 29, .66);
+      backdrop-filter: blur(5px);
+    }
+
+    .card {
+      width: min(92%, 430px);
+      max-height: 92%;
+      overflow: auto;
+      padding: clamp(22px, 6vw, 34px) clamp(19px, 5vw, 30px);
+      border: 3px solid rgba(255, 247, 223, .92);
+      border-radius: 30px;
+      background: linear-gradient(155deg, rgba(255, 250, 232, .98), rgba(238, 225, 255, .97));
+      box-shadow: 0 18px 54px rgba(0, 0, 0, .48), inset 0 2px rgba(255, 255, 255, .72);
+      color: var(--ink);
+      text-align: center;
+    }
+
+    .moonMark {
+      display: grid;
+      width: 70px;
+      height: 70px;
+      margin: 0 auto 7px;
+      place-items: center;
+      border-radius: 23px;
+      background: linear-gradient(145deg, #6540df, #31216d);
+      box-shadow: 0 7px 0 #21174f, 0 12px 22px rgba(44, 26, 92, .3);
+      font-size: 39px;
+    }
+
+    h1, h2 { margin: 10px 0; line-height: 1.02; letter-spacing: -.035em; }
+    h1 { font-size: clamp(34px, 9.2vw, 52px); color: #20154f; }
+    h2 { font-size: clamp(29px, 7.8vw, 44px); color: #281861; }
+    p { margin: 10px auto; font-size: clamp(15px, 4vw, 20px); line-height: 1.38; }
+    .intro { max-width: 350px; color: #4e4765; font-weight: 700; }
+
+    .rules {
+      display: grid;
+      gap: 8px;
+      margin: 17px 0 13px;
+      text-align: left;
+    }
+
+    .rule {
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 15px;
+      background: rgba(107, 69, 223, .09);
+      color: #3e3657;
+      font-size: clamp(13px, 3.5vw, 17px);
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .ruleIcon { font-size: 27px; text-align: center; }
+
+    .primary {
+      width: 100%;
+      min-height: 58px;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #8651ff, #6230dc);
+      box-shadow: 0 6px 0 #3b1c93, 0 10px 24px rgba(89, 44, 205, .3);
+      color: white;
+      font-size: clamp(18px, 4.8vw, 23px);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .primary:active { transform: translateY(4px); box-shadow: 0 2px 0 #3b1c93; }
+    .eyebrow { margin: 0; color: #7541e7; font-size: 12px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+
+    .choices { display: grid; gap: 10px; margin-top: 17px; }
+    .choice {
+      min-height: 55px;
+      padding: 10px 13px;
+      border: 2px solid #d9cafa;
+      border-radius: 17px;
+      background: white;
+      color: #34275b;
+      font-size: clamp(15px, 4vw, 19px);
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .choice:active { transform: scale(.98); }
+    .choice.good { border-color: #42cba7; background: #eafff7; }
+    .choice.tryAgain { border-color: var(--coral); background: #fff0ed; animation: shake .28s ease-in-out; }
+
+    .stars { margin: 9px 0; color: #f5a900; font-size: clamp(38px, 11vw, 58px); letter-spacing: 4px; text-shadow: 0 3px #fff0a8; }
+    .scoreLine { color: #4f4665; font-size: 18px; font-weight: 900; }
+    .hidden { display: none !important; }
+
+    .spark {
+      position: absolute;
+      z-index: 15;
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
+      background: var(--gold);
+      pointer-events: none;
+      animation: sparkOut .7s ease-out forwards;
+    }
+
+    @keyframes listenPulse { to { transform: scale(1.18); } }
+    @keyframes collectBurst { to { transform: scale(1.75); opacity: 0; } }
+    @keyframes shake { 25% { transform: translate(-55%, -50%) rotate(-4deg); } 75% { transform: translate(-45%, -50%) rotate(4deg); } }
+    @keyframes sparkOut { to { transform: translate(var(--dx), var(--dy)) rotate(120deg); opacity: 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="game" aria-label="The Lost Little Wish game">
+    <div id="artboard">
+      <div id="hud" class="hidden" aria-label="Game status">
+        <div class="hud-pill" id="score">Score 0</div>
+        <div class="hud-pill" id="chapter">1 · Listen</div>
+        <div class="hud-pill" id="lives">♥ ♥ ♥</div>
+      </div>
+      <div id="mission" class="hidden" aria-live="polite"></div>
+      <div id="timerTrack" class="hidden"><div id="timerBar"></div></div>
+
+      <button class="spot" data-orb="0" data-x="20.5" data-y="27.2" style="left:20.5%;top:27.2%" aria-label="Upper forest whisper"></button>
+      <button class="spot" data-orb="1" data-x="38.4" data-y="43.2" style="left:38.4%;top:43.2%" aria-label="Middle forest whisper"></button>
+      <button class="spot" data-orb="2" data-x="16.7" data-y="57.3" style="left:16.7%;top:57.3%" aria-label="Creek whisper"></button>
+      <button class="spot" data-orb="3" data-x="54.3" data-y="55.3" style="left:54.3%;top:55.3%" aria-label="Path whisper"></button>
+      <button class="spot" data-orb="4" data-x="66.8" data-y="79.5" style="left:66.8%;top:79.5%" aria-label="Lower path whisper"></button>
+      <button id="thorn" data-x="80" data-y="53.2" aria-label="Noisy thorn cloud"></button>
+      <div id="footerHint" class="hidden">Listen for the bright blue glow. The thorn cloud is noisy!</div>
+
+      <section id="startOverlay" class="overlay">
+        <div class="card">
+          <div class="moonMark">🌙</div>
+          <p class="eyebrow">Lumi's moonlight adventure</p>
+          <h1>The Lost Little Wish</h1>
+          <p class="intro">A tiny wish is hiding in the forest. Help Lumi listen, remember its song, and answer with kindness.</p>
+          <div class="rules">
+            <div class="rule"><span class="ruleIcon">◌</span><span>Tap the whisper that glows brightest.</span></div>
+            <div class="rule"><span class="ruleIcon">♫</span><span>Remember and repeat the moonlight song.</span></div>
+            <div class="rule"><span class="ruleIcon">★</span><span>Help the little wish feel less alone.</span></div>
+          </div>
+          <button id="startButton" class="primary">Begin the adventure</button>
+        </div>
+      </section>
+
+      <section id="choiceOverlay" class="overlay hidden">
+        <div class="card">
+          <div class="moonMark">⭐</div>
+          <p class="eyebrow">3 · Share the light</p>
+          <h2>“I feel lost in the dark.”</h2>
+          <p class="intro">What could Lumi say to help the tiny wish?</p>
+          <div class="choices">
+            <button class="choice" data-kind="true">“I’ll walk beside you.”</button>
+            <button class="choice">“You should hurry up!”</button>
+            <button class="choice">“Hide until morning.”</button>
+          </div>
+          <p id="choiceFeedback" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="endOverlay" class="overlay hidden">
+        <div class="card">
+          <div class="moonMark" id="endIcon">🌟</div>
+          <p class="eyebrow" id="endEyebrow">Wish found</p>
+          <h2 id="endTitle">You brought the light home!</h2>
+          <div class="stars" id="stars">★★★</div>
+          <p class="scoreLine" id="finalScore">Moonlight score · 0</p>
+          <p class="intro" id="endMessage">The tiny wish glows brighter because Lumi listened, remembered, and stayed beside it.</p>
+          <button id="replayButton" class="primary">Play again</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const BUILD = {
+        version: __BUILD_VERSION__,
+        chapters: __CHAPTER_COUNT__,
+        forgivingChoices: __FORGIVING_CHOICES__,
+        gentleTiming: __GENTLE_TIMING__,
+        fullBleed: __FULL_BLEED__,
+      };
+      const orbButtons = [...document.querySelectorAll(".spot")];
+      const thorn = document.getElementById("thorn");
+      const hud = document.getElementById("hud");
+      const scoreNode = document.getElementById("score");
+      const chapterNode = document.getElementById("chapter");
+      const livesNode = document.getElementById("lives");
+      const mission = document.getElementById("mission");
+      const timerTrack = document.getElementById("timerTrack");
+      const timerBar = document.getElementById("timerBar");
+      const footerHint = document.getElementById("footerHint");
+      const startOverlay = document.getElementById("startOverlay");
+      const choiceOverlay = document.getElementById("choiceOverlay");
+      const endOverlay = document.getElementById("endOverlay");
+      const choiceFeedback = document.getElementById("choiceFeedback");
+      const artboard = document.getElementById("artboard");
+
+      let stage = "start";
+      let score = 0;
+      let lives = 3;
+      let combo = 0;
+      let listenOrder = [];
+      let listenStep = 0;
+      let memorySequence = [];
+      let memoryStep = 0;
+      let acceptingInput = false;
+      let deadline = 0;
+      let timerDuration = 7000;
+      let raf = 0;
+      let audioContext = null;
+
+      const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const shuffled = (items) => [...items].sort(() => Math.random() - .5);
+
+      function layoutScene() {
+        if (!BUILD.fullBleed) {
+          artboard.classList.add("contained");
+          return;
+        }
+        artboard.classList.remove("contained");
+        const width = artboard.clientWidth;
+        const height = artboard.clientHeight;
+        const imageWidth = 720;
+        const imageHeight = 1280;
+        const useCover = width / height < .75;
+        const scale = useCover
+          ? Math.max(width / imageWidth, height / imageHeight)
+          : Math.min(width / imageWidth, height / imageHeight);
+        const renderedWidth = imageWidth * scale;
+        const renderedHeight = imageHeight * scale;
+        const offsetX = (width - renderedWidth) / 2;
+        const offsetY = (height - renderedHeight) / 2;
+        artboard.style.backgroundSize = useCover ? "cover" : "contain";
+        [...orbButtons, thorn].forEach((target) => {
+          target.style.left = `${offsetX + (Number(target.dataset.x) / 100) * renderedWidth}px`;
+          target.style.top = `${offsetY + (Number(target.dataset.y) / 100) * renderedHeight}px`;
+        });
+      }
+
+      addEventListener("resize", layoutScene);
+      layoutScene();
+
+      function tone(frequency, duration = .12, type = "sine", volume = .06) {
+        try {
+          audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = type;
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(volume, audioContext.currentTime);
+          gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + duration);
+          oscillator.connect(gain).connect(audioContext.destination);
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + duration);
+        } catch (_) {
+          // Audio is optional; the game remains fully playable without it.
+        }
+      }
+
+      function updateHud() {
+        scoreNode.textContent = `Score ${score}`;
+        livesNode.textContent = `${"♥ ".repeat(lives)}${"· ".repeat(3 - lives)}`.trim();
+      }
+
+      function announce(text) {
+        mission.textContent = text;
+        mission.classList.remove("pop");
+        requestAnimationFrame(() => mission.classList.add("pop"));
+        setTimeout(() => mission.classList.remove("pop"), 190);
+      }
+
+      function clearOrbs() {
+        orbButtons.forEach((orb) => orb.classList.remove("active", "ready", "correct", "wrong"));
+      }
+
+      function setChapter(number, label) {
+        chapterNode.textContent = `${number} · ${label}`;
+      }
+
+      function beginTimer(milliseconds) {
+        timerDuration = milliseconds;
+        deadline = performance.now() + milliseconds;
+        timerTrack.classList.remove("hidden");
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(tickTimer);
+      }
+
+      function stopTimer() {
+        deadline = 0;
+        timerTrack.classList.add("hidden");
+        cancelAnimationFrame(raf);
+      }
+
+      function tickTimer(now) {
+        if (!deadline) return;
+        const remaining = Math.max(0, deadline - now);
+        timerBar.style.transform = `scaleX(${remaining / timerDuration})`;
+        if (remaining <= 0) {
+          deadline = 0;
+          onListenTimeout();
+          return;
+        }
+        raf = requestAnimationFrame(tickTimer);
+      }
+
+      function sparkAt(button, color = "#ffd85f") {
+        const buttonRect = button.getBoundingClientRect();
+        const boardRect = artboard.getBoundingClientRect();
+        const centerX = buttonRect.left - boardRect.left + buttonRect.width / 2;
+        const centerY = buttonRect.top - boardRect.top + buttonRect.height / 2;
+        for (let index = 0; index < 12; index += 1) {
+          const spark = document.createElement("i");
+          const angle = (Math.PI * 2 * index) / 12;
+          const distance = 30 + Math.random() * 36;
+          spark.className = "spark";
+          spark.style.left = `${centerX}px`;
+          spark.style.top = `${centerY}px`;
+          spark.style.background = color;
+          spark.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+          spark.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+          artboard.appendChild(spark);
+          setTimeout(() => spark.remove(), 720);
+        }
+      }
+
+      function loseGlow(message) {
+        combo = 0;
+        lives -= 1;
+        updateHud();
+        tone(145, .18, "sawtooth", .035);
+        announce(message);
+        if (lives <= 0) {
+          finish(false);
+          return true;
+        }
+        return false;
+      }
+
+      function startGame() {
+        score = 0;
+        lives = 3;
+        combo = 0;
+        startOverlay.classList.add("hidden");
+        endOverlay.classList.add("hidden");
+        choiceOverlay.classList.add("hidden");
+        hud.classList.remove("hidden");
+        mission.classList.remove("hidden");
+        footerHint.classList.remove("hidden");
+        updateHud();
+        tone(392, .13);
+        setTimeout(() => tone(523, .18), 110);
+        startListen();
+      }
+
+      function startListen() {
+        stage = "listen";
+        setChapter(1, "Listen");
+        listenOrder = shuffled([0, 1, 2, 3, 4]);
+        listenStep = 0;
+        thorn.classList.add("danger");
+        nextWhisper();
+      }
+
+      function nextWhisper() {
+        acceptingInput = true;
+        clearOrbs();
+        const target = orbButtons[listenOrder[listenStep]];
+        target.classList.add("active");
+        announce(`Find whisper ${listenStep + 1} of 5 · Combo ${combo}`);
+        beginTimer(BUILD.gentleTiming ? 10000 : 7000);
+      }
+
+      function onListenTimeout() {
+        if (stage !== "listen" || !acceptingInput) return;
+        acceptingInput = false;
+        if (BUILD.gentleTiming) {
+          announce("Need more time? The same bright whisper is still waiting for you.");
+          setTimeout(nextWhisper, 650);
+          return;
+        }
+        if (loseGlow("That whisper faded. Watch for the brightest blue ring!")) return;
+        setTimeout(nextWhisper, 850);
+      }
+
+      function onListenTap(index, button) {
+        if (!acceptingInput) return;
+        if (index !== listenOrder[listenStep]) {
+          button.classList.add("wrong");
+          setTimeout(() => button.classList.remove("wrong"), 310);
+          loseGlow("Almost! Tap the whisper with the bright moving ring.");
+          return;
+        }
+
+        acceptingInput = false;
+        stopTimer();
+        button.classList.add("correct");
+        sparkAt(button);
+        combo += 1;
+        score += 100 + Math.min(combo, 5) * 20;
+        updateHud();
+        tone(440 + listenStep * 65, .16, "sine", .07);
+        listenStep += 1;
+
+        if (listenStep >= listenOrder.length) {
+          announce("All five whispers found! Listen to their moonlight song…");
+          setTimeout(() => BUILD.chapters >= 2 ? startMemory() : finish(true), 1000);
+        } else {
+          setTimeout(nextWhisper, 520);
+        }
+      }
+
+      async function startMemory() {
+        stage = "memory-show";
+        setChapter(2, "Remember");
+        thorn.classList.remove("danger");
+        clearOrbs();
+        stopTimer();
+        footerHint.textContent = "Watch first. Then tap the whispers in the same order.";
+        memorySequence = shuffled([0, 1, 2, 3, 4]).slice(0, 3);
+        memoryStep = 0;
+        acceptingInput = false;
+        announce("Watch the three-note moonlight song…");
+        await wait(700);
+        for (let index = 0; index < memorySequence.length; index += 1) {
+          const orb = orbButtons[memorySequence[index]];
+          orb.classList.add("active");
+          tone(392 + memorySequence[index] * 58, .2, "sine", .065);
+          await wait(620);
+          orb.classList.remove("active");
+          await wait(220);
+        }
+        stage = "memory-play";
+        acceptingInput = true;
+        orbButtons.forEach((orb) => orb.classList.add("ready"));
+        announce("Your turn · Tap note 1 of 3");
+      }
+
+      async function retryMemory() {
+        acceptingInput = false;
+        clearOrbs();
+        memoryStep = 0;
+        await wait(700);
+        startMemory();
+      }
+
+      function onMemoryTap(index, button) {
+        if (!acceptingInput) return;
+        if (index !== memorySequence[memoryStep]) {
+          button.classList.add("wrong");
+          if (!loseGlow("The song wiggled away. Lumi will play it once more.")) retryMemory();
+          return;
+        }
+
+        button.classList.add("correct");
+        setTimeout(() => button.classList.remove("correct"), 460);
+        sparkAt(button, "#68f0e0");
+        tone(392 + index * 58, .18, "sine", .07);
+        memoryStep += 1;
+        score += 150;
+        updateHud();
+
+        if (memoryStep >= memorySequence.length) {
+          acceptingInput = false;
+          clearOrbs();
+          score += 250;
+          updateHud();
+          announce("You remembered the whole song! The lost wish is answering…");
+          setTimeout(() => BUILD.chapters >= 3 ? startKindness() : finish(true), 950);
+        } else {
+          announce(`Great memory · Tap note ${memoryStep + 1} of 3`);
+        }
+      }
+
+      function startKindness() {
+        stage = "choice";
+        setChapter(3, "Share");
+        hud.classList.add("hidden");
+        mission.classList.add("hidden");
+        footerHint.classList.add("hidden");
+        choiceFeedback.textContent = "";
+        document.querySelectorAll(".choice").forEach((choice) => choice.classList.remove("good", "tryAgain"));
+        choiceOverlay.classList.remove("hidden");
+        tone(523, .15);
+      }
+
+      function chooseKindness(button) {
+        if (button.dataset.kind === "true") {
+          button.classList.add("good");
+          choiceFeedback.textContent = "That gives the little wish courage!";
+          score += 500;
+          tone(523, .16);
+          setTimeout(() => tone(659, .2), 120);
+          setTimeout(() => finish(true), 720);
+          return;
+        }
+        button.classList.add("tryAgain");
+        choiceFeedback.textContent = "Try the answer that helps the wish feel safe and heard.";
+        tone(185, .12, "triangle", .04);
+        setTimeout(() => button.classList.remove("tryAgain"), 420);
+        if (!BUILD.forgivingChoices) setTimeout(() => finish(false), 700);
+      }
+
+      function finish(won) {
+        stage = "end";
+        acceptingInput = false;
+        stopTimer();
+        clearOrbs();
+        hud.classList.add("hidden");
+        mission.classList.add("hidden");
+        footerHint.classList.add("hidden");
+        choiceOverlay.classList.add("hidden");
+        const stars = won ? (lives === 3 ? 3 : lives === 2 ? 2 : 1) : 0;
+        document.getElementById("endIcon").textContent = won ? "🌟" : "🏮";
+        document.getElementById("endEyebrow").textContent = won ? "Wish found" : "The lantern is resting";
+        document.getElementById("endTitle").textContent = won ? "You brought the light home!" : "Let’s listen again";
+        document.getElementById("stars").textContent = won ? `${"★".repeat(stars)}${"☆".repeat(3 - stars)}` : "☆☆☆";
+        document.getElementById("finalScore").textContent = `Moonlight score · ${score}`;
+        document.getElementById("endMessage").textContent = won
+          ? "The tiny wish glows brighter because Lumi listened, remembered, and stayed beside it."
+          : "The forest became noisy, but every good listener can pause and try a new way.";
+        endOverlay.classList.remove("hidden");
+      }
+
+      orbButtons.forEach((button, index) => {
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          if (stage === "listen") onListenTap(index, button);
+          if (stage === "memory-play") onMemoryTap(index, button);
+        });
+      });
+
+      thorn.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        if (stage !== "listen" || !acceptingInput) return;
+        thorn.classList.add("bump");
+        setTimeout(() => thorn.classList.remove("bump"), 320);
+        sparkAt(thorn, "#ff745f");
+        loseGlow("Bump! That was the noisy thorn cloud. Follow the blue glow.");
+      });
+
+      document.getElementById("startButton").addEventListener("click", startGame);
+      document.getElementById("replayButton").addEventListener("click", startGame);
+      document.querySelectorAll(".choice").forEach((button) => button.addEventListener("click", () => chooseKindness(button)));
+
+      if (BUILD.version < 5) {
+        document.querySelector(".intro").textContent = BUILD.chapters === 1
+          ? "Help Lumi find five glowing whispers before the noisy cloud interrupts."
+          : "Help Lumi find the whispers and remember their moonlight song.";
+      }
+    })();
+  </script>
+</body>
+</html>

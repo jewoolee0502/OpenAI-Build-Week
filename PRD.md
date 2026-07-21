@@ -88,6 +88,8 @@ The product also makes the creative process itself part of the learning. As chil
 6. The child draws at least one character, object, goal, obstacle, or surprise, either from an AI spark or from a completely new idea, then names and arranges the drawings.
 7. The app combines the original idea, child-authored drawings, arrangement, and behavior explanation into visual interpretations; the child chooses one before the first playable test build.
 8. The child plays the generated game in a sandboxed web view and types or speaks further edit requests.
+   Full-screen play mode hides the creation tools; returning to the developer console requires an
+   uninterrupted five-second hold on the native return control.
 9. The backend saves every tested change as an immutable version, and the child can keep the game as a draft or publish it.
 
 ### Publish and play
@@ -129,6 +131,9 @@ The product also makes the creative process itself part of the learning. As chil
 - Generate a self-contained, basic HTML/CSS/JavaScript game bundle.
 - Restrict generated games to a documented, safe browser capability set.
 - Display a playable preview in the Expo mobile app.
+- Let the child enter a distraction-free full-screen play mode. Keep a native return control above
+  the untrusted game surface and require a continuous five-second hold before returning to the
+  project developer console; releasing early must cancel and reset the hold.
 - Persist the source bundle and immutable versions for each generation or edit.
 - Accept natural-language edits against an existing project and return an updated playable version.
 - Show a clear error and allow retry when generation fails.
@@ -154,6 +159,7 @@ The product also makes the creative process itself part of the learning. As chil
 - Analyze prompts, immutable version history, and supported activity events across all of the child's available projects; do not infer from unrelated account or personal data.
 - Return a plain-language portfolio summary, two to five supported observation dimensions, possible interest signals, and two to four conversation starters.
 - Attach concrete, named project/version evidence to every observation dimension and identify which projects contributed to the snapshot.
+- Represent each radar dimension on a `0–10` evidence-depth scale: `0–1` not enough evidence, `2–3` emerging, `4–5` demonstrated, `6–8` repeated, and `9–10` sustained. This scale describes the amount and recurrence of available portfolio evidence; it is never an ability score or grade.
 - Use bounded language such as “across the available projects,” “may suggest,” and “there is not yet enough evidence.”
 - Never score, rank, diagnose, compare with other children, predict a career, or assert fixed traits, intelligence, or potential.
 - Do not attribute AI-generated implementation quality to the child; use only child-originated prompts, edits, playtests, and reflections as evidence.

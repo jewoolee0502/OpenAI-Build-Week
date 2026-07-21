@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { GameProject } from '@/api/types';
@@ -20,6 +20,7 @@ function progressLabel(project: GameProject) {
 
 export default function ProjectsTabScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const {
     child,
     projects,
@@ -34,6 +35,9 @@ export default function ProjectsTabScreen() {
     () => projects.find((project) => project.status === 'draft' || project.builder?.stage !== 'ready_to_publish') ?? projects[0] ?? null,
     [projects],
   );
+  const gridColumns = width >= 680 ? 3 : 2;
+  const gridWidth = Math.min(width, 760) - 28;
+  const projectCardWidth = (gridWidth - (gridColumns - 1) * 10) / gridColumns;
 
   useEffect(() => {
     if (childUserId) void refreshChildProjects().catch(() => undefined);
@@ -109,7 +113,7 @@ export default function ProjectsTabScreen() {
                 accessibilityRole="button"
                 key={project.id}
                 onPress={() => openProject(project)}
-                style={({ pressed }) => [styles.projectCard, pressed ? styles.pressed : null]}>
+                style={({ pressed }) => [styles.projectCard, { width: projectCardWidth }, pressed ? styles.pressed : null]}>
                 <LinearGradient colors={['#3659B6', '#A74FC5', '#FF8F75']} style={StyleSheet.absoluteFill} />
                 {projectImageSource(project) ? <Image source={projectImageSource(project)!} style={styles.coverImage} /> : null}
                 {!projectImageSource(project) ? <Text style={styles.cardFallback}>✦</Text> : null}
@@ -146,7 +150,7 @@ const styles = StyleSheet.create({
   keepButton: { minHeight: 47, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 'auto', borderRadius: 15, backgroundColor: '#823DF0', paddingHorizontal: 10 },
   keepButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
   projectGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  projectCard: { position: 'relative', flexBasis: '48%', flexGrow: 1, minWidth: 135, aspectRatio: 1.18, overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF30', borderRadius: 20 },
+  projectCard: { position: 'relative', flexShrink: 0, aspectRatio: 1.18, overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF30', borderRadius: 20 },
   cardShade: { ...StyleSheet.absoluteFillObject, top: '45%' },
   cardCopy: { position: 'absolute', right: 11, bottom: 10, left: 11, gap: 2 },
   cardTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },

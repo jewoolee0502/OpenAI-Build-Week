@@ -193,6 +193,11 @@ export default function StudioScreen() {
           ) : null}
 
           <View style={styles.previewHeading}><View><Text style={styles.eyebrow}>YOUR PLAYABLE GAME</Text><Text style={styles.previewTitle}>Try it like a player</Text></View><Text style={styles.previewHint}>Tap, test, notice</Text></View>
+          <ActionButton
+            label="▶  Play full screen"
+            onPress={() => router.push({ pathname: '/play/[projectId]', params: { projectId: project.id } })}
+            tone="mint"
+          />
           <GamePreview height={460} html={project.currentVersion.html} />
           {errorMessage ? <ErrorBanner message={errorMessage} onDismiss={clearError} /> : null}
           {isLoading ? <LoadingPill /> : null}

@@ -21,7 +21,7 @@ evidence-based creative-practice insights.
 - Automatic square project-cover generation through the OpenAI Image API, with PostgreSQL byte
   storage and a deterministic local SVG fallback.
 - Separate Parent Portal Portfolio, Activity, and Insights pages.
-- An accessible child-level, six-part Creative Practice Hexagon backed by `0–4` evidence states and
+- An accessible child-level, six-part Creative Practice Radar backed by a `0–10` evidence-depth scale and
   concrete evidence across the available portfolio, never peer comparison or a fixed-ability score.
 - Fastify authorization for every child, guardian, project, transcription, and insight request.
 - Server-only OpenAI Responses and Audio Transcriptions APIs. No client receives an OpenAI or
@@ -56,6 +56,18 @@ npm run db:seed
 
 This creates `parent@imaginelab.local` with password `imagine-together-123` and one linked child.
 Normal demos can instead create both accounts through the Parent Portal and Expo app.
+
+To restore the polished local presentation for child `KID-T33J-GZ5X`, including the playable
+**The Lost Little Wish** build, its version history, creative-process evidence, activity timeline,
+and portfolio Insight snapshot, run:
+
+```bash
+cd backend
+npm run demo:polish
+```
+
+The command is idempotent, so it is safe to run again before a demo. It updates only that local
+child's matching demo projects and does not require an OpenAI request.
 
 Backend checks require the local PostgreSQL container. Tests use the separate `imaginelab_test`
 database and do not modify development accounts or projects:
