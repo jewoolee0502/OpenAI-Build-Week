@@ -56,3 +56,26 @@ export function createDemoGame(prompt: string, versionNumber = 1): { title: stri
 </html>`,
   };
 }
+
+export function createWorkshopDraft(prompt: string, title: string): { title: string; html: string } {
+  const safeTitle = escapeHtmlText(title);
+  const safeIdea = escapeHtmlText(prompt.replace(/\s+/g, " ").trim().slice(0, 240));
+  return {
+    title,
+    html: `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:ui-rounded,system-ui,sans-serif;background:#17142b;color:#fff}
+    body{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#5d3fb0 0,#282044 42%,#17142b 75%)}
+    main{width:min(520px,100%);border:1px solid #ffffff2b;border-radius:28px;background:#221d3ddb;padding:28px;text-align:center;box-shadow:0 24px 80px #0006}
+    .spark{font-size:42px;color:#8af4d6}h1{margin:10px 0;font-size:clamp(30px,8vw,48px);line-height:1}p{color:#d7d0ed;line-height:1.55}.idea{margin-top:18px;border-radius:18px;background:#ffffff10;padding:14px;color:#fff;font-weight:700}
+  </style>
+</head>
+<body><main><div class="spark">✦</div><h1>${safeTitle}</h1><p>This game is still in the imagination lab. Draw its world and game pieces to make the first playable build.</p><div class="idea">${safeIdea}</div></main><script>document.documentElement.dataset.workshop='ready';</script></body>
+</html>`,
+  };
+}

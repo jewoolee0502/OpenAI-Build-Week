@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { BuilderDraft, CanvasAsset } from '@/api/types';
+import type { BuilderDraft, CanvasAsset, CreativePlan } from '@/api/types';
 import { BrandHeader } from '@/components/brand-header';
 import { DrawingSheet } from '@/components/drawing-sheet';
 import { HoldToTalkButton } from '@/components/hold-to-talk-button';
@@ -26,6 +27,7 @@ import { colors, radii, spacing } from '@/theme';
 
 const emptyDraft = (): BuilderDraft => ({
   stage: 'build',
+  creativePlan: null,
   interpretationStatus: 'pending',
   interpretation: null,
   assets: [],
@@ -38,11 +40,14 @@ export default function BuilderScreen() {
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
   const router = useRouter();
   const {
+    child,
     projects,
+    isRestoringSession,
     refreshChildProjects,
     deleteProject,
     loadBuilderDraft,
     saveBuilderDraft,
+    generateCreativePlan,
     generateSceneVariants,
     testBuilderGame,
     transcribeAudio,
@@ -53,22 +58,36 @@ export default function BuilderScreen() {
   const [draft, setDraft] = useState<BuilderDraft>(emptyDraft);
   const [mode, setMode] = useState<'canvas' | 'background' | 'object'>('canvas');
   const [objectName, setObjectName] = useState('');
+  const [activeMission, setActiveMission] = useState<CreativePlan['elementMissions'][number] | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [isPlanning, setIsPlanning] = useState(false);
+  const [isDrawingOpen, setIsDrawingOpen] = useState(false);
   const [worldSize, setWorldSize] = useState({ width: 1, height: 1 });
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
   const [isObjectMenuOpen, setIsObjectMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isRestoringSession && !child) router.replace('/');
+  }, [child, isRestoringSession, router]);
 
   useEffect(() => {
     if (!project) void refreshChildProjects().catch(() => undefined);
   }, [project, refreshChildProjects]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || isRestoringSession || !child) return;
+    setIsPlanning(true);
     void loadBuilderDraft(projectId)
-      .then((value) => setDraft(value ?? emptyDraft()))
-      .catch(() => undefined);
-  }, [loadBuilderDraft, projectId]);
+      .then(async (value) => {
+        const nextDraft = { ...emptyDraft(), ...(value ?? {}) };
+        if (nextDraft.creativePlan) return nextDraft;
+        return generateCreativePlan(projectId);
+      })
+      .then((value) => setDraft(value))
+      .catch(() => undefined)
+      .finally(() => setIsPlanning(false));
+  }, [child, generateCreativePlan, isRestoringSession, loadBuilderDraft, projectId]);
 
   const selected = draft.assets.find((asset) => asset.id === selectedAssetId) ?? null;
   const background = draft.assets.find((asset) => asset.kind === 'background') ?? null;
@@ -76,6 +95,19 @@ export default function BuilderScreen() {
     () => draft.assets.filter((asset) => asset.kind === 'object').sort((a, b) => a.zIndex - b.zIndex),
     [draft.assets],
   );
+  const drawingPrompt = mode === 'background' ? draft.creativePlan?.backgroundMission : activeMission;
+  const drawingTitle = mode === 'background'
+    ? draft.creativePlan?.backgroundMission.title ?? 'Draw your game world'
+    : activeMission?.suggestedName ?? 'Draw something the game needs';
+  const shortDrawingPrompt = compactDrawingPrompt(
+    drawingPrompt?.prompt ?? (mode === 'background'
+      ? 'Show where your game happens in your own style.'
+      : 'Invent a character, object, goal, obstacle, or surprise.'),
+  );
+
+  useEffect(() => () => {
+    void Speech.stop();
+  }, []);
 
   const save = useCallback(async (nextDraft = draft) => {
     if (!projectId) return;
@@ -94,10 +126,13 @@ export default function BuilderScreen() {
 
   const addDrawing = useCallback((imageDataUrl: string) => {
     const isBackground = mode === 'background';
-    const name = isBackground ? 'My background' : objectName.trim() || 'My game object';
+    const name = isBackground
+      ? 'My background'
+      : objectName.trim() || activeMission?.suggestedName || 'My game object';
     const asset: CanvasAsset = {
       id: createId(),
       kind: isBackground ? 'background' : 'object',
+      ...(!isBackground && activeMission ? { missionId: activeMission.id } : {}),
       name,
       imageDataUrl,
       x: isBackground ? 0 : 0.35,
@@ -117,12 +152,15 @@ export default function BuilderScreen() {
         : [...current.assets, asset],
     }));
     setMode('canvas');
+    setIsDrawingOpen(false);
+    void Speech.stop();
     setObjectName('');
-    setSelectedAssetId(asset.id);
-  }, [mode, objectName, objects.length]);
+    setActiveMission(null);
+    setSelectedAssetId(isBackground ? null : asset.id);
+  }, [activeMission, mode, objectName, objects.length]);
 
   const requestVariants = useCallback(async () => {
-    if (!projectId || !background) return;
+    if (!projectId || !background || objects.length === 0) return;
     const preparedDraft = { ...draft, interpretationStatus: 'pending' as const };
     await save(preparedDraft);
     setIsWorking(true);
@@ -131,7 +169,47 @@ export default function BuilderScreen() {
     } finally {
       setIsWorking(false);
     }
-  }, [background, draft, generateSceneVariants, projectId, save]);
+  }, [background, draft, generateSceneVariants, objects.length, projectId, save]);
+
+  const openBackgroundDrawing = useCallback(() => {
+    setActiveMission(null);
+    setMode('background');
+  }, []);
+
+  const openMissionDrawing = useCallback((mission: CreativePlan['elementMissions'][number]) => {
+    setActiveMission(mission);
+    setObjectName(mission.suggestedName);
+    setMode('object');
+  }, []);
+
+  const openFreeDrawing = useCallback(() => {
+    setActiveMission(null);
+    setObjectName('');
+    setMode('object');
+  }, []);
+
+  const closeDrawing = useCallback(() => {
+    void Speech.stop();
+    setIsDrawingOpen(false);
+    setActiveMission(null);
+    setObjectName('');
+    setMode('canvas');
+  }, []);
+
+  const speakDrawingPrompt = useCallback(() => {
+    const message = `${drawingTitle}. ${shortDrawingPrompt}`;
+    void Speech.stop().then(() => Speech.speak(message, { rate: 0.88, pitch: 1.02 }));
+  }, [drawingTitle, shortDrawingPrompt]);
+
+  const startDrawing = useCallback(() => {
+    setIsDrawingOpen(true);
+    speakDrawingPrompt();
+  }, [speakDrawingPrompt]);
+
+  const leaveFullScreenDrawing = useCallback(() => {
+    void Speech.stop();
+    setIsDrawingOpen(false);
+  }, []);
 
   const testGame = useCallback(async () => {
     if (!projectId || !draft.selectedVariantId) return;
@@ -209,25 +287,61 @@ export default function BuilderScreen() {
   }
 
   if (mode !== 'canvas') {
+    const possibilities = drawingPrompt?.possibilities ?? [];
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader onBack={() => setMode('canvas')} />
-        <View style={styles.drawingContent}>
-          {mode === 'object' ? (
-            <SurfaceCard style={styles.card}>
-              <Text style={styles.cardEyebrow}>NAME YOUR IDEA</Text>
-              <Text style={styles.cardTitle}>What did you draw?</Text>
-              <TextInput
-                value={objectName}
-                onChangeText={setObjectName}
-                placeholder="A bird, coin, castle…"
-                placeholderTextColor={colors.mutedText}
-                style={styles.input}
-              />
+        <BrandHeader onBack={closeDrawing} />
+        <ScrollView contentContainerStyle={styles.promptScrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.drawingPromptContent}>
+            <SurfaceCard style={styles.drawingPromptCard}>
+              <Text style={styles.cardEyebrow}>{mode === 'background' ? 'STEP 2 · DRAW THE WORLD' : 'STEP 3 · INVENT A GAME PIECE'}</Text>
+              <Text style={styles.drawingPromptTitle}>{drawingTitle}</Text>
+              <Text style={styles.drawingPromptCopy}>{shortDrawingPrompt}</Text>
+              {possibilities.length > 0 ? (
+                <View style={styles.sparkRow}>
+                  {possibilities.slice(0, 3).map((possibility) => <Text key={possibility} style={styles.sparkChip}>Maybe {possibility}</Text>)}
+                </View>
+              ) : null}
+              {mode === 'object' ? (
+                <>
+                  {activeMission ? <Text style={styles.missionPurpose}>{activeMission.purpose}</Text> : null}
+                  <Text style={styles.inputLabel}>Name your drawing</Text>
+                  <TextInput
+                    value={objectName}
+                    onChangeText={setObjectName}
+                    placeholder={activeMission?.suggestedName ?? 'A bird, coin, castle…'}
+                    placeholderTextColor={colors.mutedText}
+                    style={styles.input}
+                  />
+                </>
+              ) : null}
+              <Text style={styles.openChoice}>Use the spark, change it, or draw something completely different.</Text>
             </SurfaceCard>
+            <View style={styles.promptActions}>
+              <View style={styles.promptAction}><ActionButton label="🔊  Hear the prompt" onPress={speakDrawingPrompt} tone="secondary" /></View>
+              <View style={styles.promptAction}><ActionButton label="✎  Start drawing" onPress={startDrawing} tone="mint" /></View>
+            </View>
+          </View>
+        </ScrollView>
+        <Modal
+          animationType="slide"
+          navigationBarTranslucent
+          onRequestClose={leaveFullScreenDrawing}
+          statusBarTranslucent
+          visible={isDrawingOpen}>
+          {isDrawingOpen ? (
+            <DrawingSheet
+              drawingKind={mode === 'background' ? 'background' : 'object'}
+              fullScreen
+              onCancel={leaveFullScreenDrawing}
+              onSave={addDrawing}
+              onSpeak={speakDrawingPrompt}
+              projectTitle={project.title}
+              prompt={shortDrawingPrompt}
+              promptTitle={drawingTitle}
+            />
           ) : null}
-          <DrawingSheet fullScreen onCancel={() => setMode('canvas')} onSave={addDrawing} />
-        </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -246,39 +360,117 @@ export default function BuilderScreen() {
             <MiniBadge label={draft.interpretationStatus === 'pending' ? 'DRAFT' : 'READY'} />
           </View>
 
-          <StepRail stage={draft.stage} />
+          <StepRail hasBackground={Boolean(background)} hasElements={objects.length > 0} />
           {errorMessage ? <ErrorBanner message={errorMessage} onDismiss={clearError} /> : null}
 
-          <LinearGradient colors={['#342A64', '#24203E']} style={styles.worldShell}>
-            <View style={styles.worldTopLine}>
-              <View><Text style={styles.cardEyebrow}>YOUR CANVAS</Text><Text style={styles.worldTitle}>Arrange the scene</Text></View>
-              <Text style={styles.assetCount}>{draft.assets.length} piece{draft.assets.length === 1 ? '' : 's'}</Text>
-            </View>
-            <Pressable
-              accessibilityHint="Opens a full-screen space where you can move one object at a time."
-              accessibilityLabel="Open full-screen canvas"
-              onPress={openCanvas}
-              style={styles.world}>
-              {background ? (
+          {isPlanning ? (
+            <LinearGradient colors={['#342A64', '#24203E']} style={styles.planLoading}>
+              <Text style={styles.planSpark}>✦</Text>
+              <Text style={styles.cardTitle}>Exploring your idea…</Text>
+              <Text style={styles.cardCopy}>ImagineLab is finding different ways your idea could play, then it will invite you to draw the parts.</Text>
+              <LoadingPill label="Making creative sparks…" />
+            </LinearGradient>
+          ) : null}
+
+          {draft.creativePlan ? (
+            <SurfaceCard style={styles.ideaCard}>
+              <Text style={styles.cardEyebrow}>STEP 1 · YOUR IDEA</Text>
+              <Text style={styles.cardTitle}>Here&apos;s what I heard</Text>
+              <Text style={styles.ideaSummary}>{draft.creativePlan.ideaSummary}</Text>
+              <Text style={styles.directionLabel}>This idea could become…</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.directionRow}>
+                {draft.creativePlan.gameDirections.map((direction) => (
+                  <View key={direction.title} style={styles.directionCard}>
+                    <Text style={styles.directionTitle}>{direction.title}</Text>
+                    <Text style={styles.directionText}>{direction.mechanic}</Text>
+                    <Text style={styles.directionTwist}>✦ {direction.creativeTwist}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+              <Text style={styles.openChoice}>{draft.creativePlan.encouragement}</Text>
+            </SurfaceCard>
+          ) : !isPlanning ? (
+            <SurfaceCard style={styles.card}>
+              <Text style={styles.cardEyebrow}>STEP 1 · YOUR IDEA</Text>
+              <Text style={styles.cardTitle}>Let&apos;s explore it together</Text>
+              <Text style={styles.cardCopy}>Ask ImagineLab to turn your idea into open drawing invitations.</Text>
+              <ActionButton label="✦  Explore my idea" onPress={() => projectId && void generateCreativePlan(projectId).then(setDraft).catch(() => undefined)} />
+            </SurfaceCard>
+          ) : null}
+
+          {draft.creativePlan && !background ? (
+            <LinearGradient colors={['#7048D8', '#B65F92']} style={styles.missionHero}>
+              <Text style={styles.cardEyebrow}>STEP 2 · DRAW THE BACKGROUND</Text>
+              <Text style={styles.nextStepTitle}>{draft.creativePlan.backgroundMission.title}</Text>
+              <Text style={styles.nextStepCopy}>{draft.creativePlan.backgroundMission.prompt}</Text>
+              <View style={styles.sparkRow}>
+                {draft.creativePlan.backgroundMission.possibilities.map((possibility) => (
+                  <Text key={possibility} style={styles.heroSparkChip}>Maybe {possibility}</Text>
+                ))}
+              </View>
+              <Text style={styles.heroFreedom}>Or surprise me with a place that is completely yours.</Text>
+              <ActionButton label="✎  Draw my world" onPress={openBackgroundDrawing} tone="mint" />
+            </LinearGradient>
+          ) : null}
+
+          {draft.creativePlan && background ? (
+            <SurfaceCard style={styles.elementMissionCard}>
+              <Text style={styles.cardEyebrow}>STEP 3 · INVENT THE GAME PIECES</Text>
+              <Text style={styles.cardTitle}>What should live in your world?</Text>
+              <Text style={styles.cardCopy}>Choose any spark below, combine a few, or invent your own. You only need one drawing to continue.</Text>
+              <View style={styles.missionList}>
+                {draft.creativePlan.elementMissions.map((mission) => {
+                  const completed = objects.some((asset) => asset.missionId === mission.id);
+                  return (
+                    <Pressable
+                      accessibilityLabel={`${completed ? 'Redraw' : 'Draw'} ${mission.suggestedName}`}
+                      key={mission.id}
+                      onPress={() => openMissionDrawing(mission)}
+                      style={({ pressed }) => [styles.missionCard, completed ? styles.missionCardDone : null, pressed ? styles.missionCardPressed : null]}>
+                      <View style={styles.missionTopLine}>
+                        <Text style={styles.missionName}>{mission.suggestedName}</Text>
+                        <Text style={completed ? styles.missionDone : styles.missionDraw}>{completed ? '✓ DRAWN' : 'DRAW →'}</Text>
+                      </View>
+                      <Text style={styles.missionPrompt}>{mission.prompt}</Text>
+                      <Text style={styles.missionPurpose}>{mission.purpose}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ActionButton label="+ Draw my own idea" onPress={openFreeDrawing} tone="secondary" />
+            </SurfaceCard>
+          ) : null}
+
+          {background ? (
+            <LinearGradient colors={['#342A64', '#24203E']} style={styles.worldShell}>
+              <View style={styles.worldTopLine}>
+                <View><Text style={styles.cardEyebrow}>YOUR CANVAS</Text><Text style={styles.worldTitle}>Arrange your world</Text></View>
+                <Text style={styles.assetCount}>{draft.assets.length} piece{draft.assets.length === 1 ? '' : 's'}</Text>
+              </View>
+              <Pressable
+                accessibilityHint="Opens a full-screen space where you can move one object at a time."
+                accessibilityLabel="Open full-screen canvas"
+                onPress={openCanvas}
+                style={styles.world}>
                 <Image source={{ uri: background.imageDataUrl }} style={styles.background} />
-              ) : (
-                <View style={styles.blank}><Text style={styles.blankSymbol}>✦</Text><Text style={styles.blankText}>Draw a background to start your world</Text></View>
-              )}
-              {objects.map((asset) => <StaticCanvasAsset asset={asset} key={asset.id} selected={selectedAssetId === asset.id} />)}
-              <View pointerEvents="none" style={styles.worldHint}><Text style={styles.worldHintText}>↗ Tap to arrange</Text></View>
-            </Pressable>
-            <View style={styles.actions}>
-              <View style={styles.actionHalf}><ActionButton label={background ? 'Redraw background' : 'Draw background'} onPress={() => setMode('background')} tone="secondary" /></View>
-              <View style={styles.actionHalf}><ActionButton label="+ Add an object" onPress={() => setMode('object')} /></View>
+                {objects.map((asset) => <StaticCanvasAsset asset={asset} key={asset.id} selected={selectedAssetId === asset.id} />)}
+                <View pointerEvents="none" style={styles.worldHint}><Text style={styles.worldHintText}>↗ Tap to arrange</Text></View>
+              </Pressable>
+              <View style={styles.actions}>
+                <View style={styles.actionHalf}><ActionButton label="Redraw background" onPress={openBackgroundDrawing} tone="secondary" /></View>
+                <View style={styles.actionHalf}><ActionButton label="+ Add my own piece" onPress={openFreeDrawing} /></View>
+              </View>
+            </LinearGradient>
+          ) : null}
+
+          {background ? (
+            <View style={styles.learningCallout}>
+              <Text style={styles.learningIcon}>💡</Text>
+              <View style={styles.learningCopy}><Text style={styles.learningTitle}>You&apos;re the game designer</Text><Text style={styles.learningText}>The AI offers possibilities. Your drawings, names, arrangement, and rules decide what the game becomes.</Text></View>
             </View>
-          </LinearGradient>
+          ) : null}
 
-          <View style={styles.learningCallout}>
-            <Text style={styles.learningIcon}>💡</Text>
-            <View style={styles.learningCopy}><Text style={styles.learningTitle}>You&apos;re the art director</Text><Text style={styles.learningText}>Give objects names, place them with intention, and explain what should happen in your game.</Text></View>
-          </View>
-
-          {selected ? (
+          {selected?.kind === 'object' ? (
             <SurfaceCard style={styles.card}>
               <Text style={styles.cardEyebrow}>BEHAVIOR IDEA</Text>
               <Text style={styles.cardTitle}>What should {selected.name} do?</Text>
@@ -311,20 +503,20 @@ export default function BuilderScreen() {
             </SurfaceCard>
           ) : null}
 
-          {draft.variants.length === 0 ? (
+          {background && draft.variants.length === 0 ? (
             <LinearGradient colors={['#6F46D8', '#B65F92']} style={styles.nextStepCard}>
-              <Text style={styles.cardEyebrow}>NEXT: CHOOSE A LOOK</Text>
-              <Text style={styles.nextStepTitle}>Ready to see your world in four styles?</Text>
-              <Text style={styles.nextStepCopy}>ImagineLab reads your prompt, named drawings, arrangement, and behavior idea. You choose what fits.</Text>
+              <Text style={styles.cardEyebrow}>PUT YOUR IDEAS TOGETHER</Text>
+              <Text style={styles.nextStepTitle}>{objects.length > 0 ? 'Ready to see your world come alive?' : 'Add one game piece to continue'}</Text>
+              <Text style={styles.nextStepCopy}>{objects.length > 0 ? 'ImagineLab will read your original idea, your drawings, their names, arrangement, and behavior idea. You still choose the final direction.' : 'Draw at least one character, object, goal, obstacle, or surprise so the test game is built from your creativity.'}</Text>
               <ActionButton
-                disabled={!background}
+                disabled={objects.length === 0}
                 label="✦  Show 4 design ideas"
                 loading={isWorking}
                 onPress={() => void requestVariants()}
                 tone="mint"
               />
             </LinearGradient>
-          ) : (
+          ) : background && draft.variants.length > 0 ? (
             <SurfaceCard style={styles.card}>
               <Text style={styles.cardEyebrow}>YOU DECIDE</Text>
               <Text style={styles.cardTitle}>Choose a game look</Text>
@@ -347,7 +539,7 @@ export default function BuilderScreen() {
               </View>
               <ActionButton disabled={!draft.selectedVariantId} label="▷  Build my test game" loading={isWorking} onPress={() => void testGame()} tone="mint" />
             </SurfaceCard>
-          )}
+          ) : null}
 
           {isWorking ? <LoadingPill label={draft.variants.length === 0 ? 'Saving your choices…' : 'Building your world…'} /> : null}
           <View style={styles.saveRow}>
@@ -384,13 +576,14 @@ export default function BuilderScreen() {
   );
 }
 
-function StepRail({ stage }: { stage: BuilderDraft['stage'] }) {
-  const activeStep = stage === 'build' ? 0 : stage === 'choose_design' ? 1 : 2;
+function StepRail({ hasBackground, hasElements }: { hasBackground: boolean; hasElements: boolean }) {
+  const activeStep = hasBackground ? 2 : 1;
+  const completed = [true, hasBackground, hasElements];
   return (
-    <View accessibilityLabel={`Builder step ${activeStep + 1} of 3`} style={styles.stepRail}>
-      {['DRAW & ARRANGE', 'CHOOSE A LOOK', 'TEST & IMPROVE'].map((label, index) => (
+    <View accessibilityLabel={`Creative start step ${activeStep + 1} of 3`} style={styles.stepRail}>
+      {['SHARE IDEA', 'DRAW WORLD', 'INVENT PIECES'].map((label, index) => (
         <View key={label} style={styles.stepItem}>
-          <View style={[styles.stepDot, index <= activeStep ? styles.stepDotActive : null]}><Text style={[styles.stepNumber, index <= activeStep ? styles.stepNumberActive : null]}>{index + 1}</Text></View>
+          <View style={[styles.stepDot, completed[index] ? styles.stepDotComplete : null, index === activeStep ? styles.stepDotActive : null]}><Text style={[styles.stepNumber, completed[index] || index === activeStep ? styles.stepNumberActive : null]}>{completed[index] ? '✓' : index + 1}</Text></View>
           <Text style={[styles.stepLabel, index === activeStep ? styles.stepLabelActive : null]}>{label}</Text>
         </View>
       ))}
@@ -403,7 +596,13 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scrollContent: { alignItems: 'center', paddingBottom: 50 },
   content: { width: '100%', maxWidth: 760, gap: spacing.md, paddingHorizontal: 18, paddingTop: 6 },
-  drawingContent: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center', gap: spacing.sm, padding: 18, paddingTop: spacing.sm },
+  promptScrollContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 18 },
+  drawingPromptContent: { width: '100%', maxWidth: 620, gap: spacing.md },
+  drawingPromptCard: { gap: 12, borderWidth: 1, borderColor: '#A98BFF45', padding: spacing.md },
+  drawingPromptTitle: { color: colors.white, fontSize: 28, fontWeight: '900', letterSpacing: -0.8, lineHeight: 31 },
+  drawingPromptCopy: { color: colors.white, fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  promptActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  promptAction: { flex: 1, minWidth: 150 },
   heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   headingCopy: { flex: 1, gap: 3 },
   eyebrow: { color: colors.mint, fontWeight: '900', fontSize: 11, letterSpacing: 1.1 },
@@ -412,6 +611,7 @@ const styles = StyleSheet.create({
   stepRail: { flexDirection: 'row', justifyContent: 'space-between', gap: 5, borderRadius: 18, backgroundColor: colors.surface, padding: 12 },
   stepItem: { flex: 1, alignItems: 'center', gap: 6 },
   stepDot: { width: 29, height: 29, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FFFFFF2E', borderRadius: 15, backgroundColor: colors.surfaceLifted },
+  stepDotComplete: { borderColor: '#8AF4D670', backgroundColor: '#8AF4D625' },
   stepDotActive: { borderColor: colors.mint, backgroundColor: colors.mint },
   stepNumber: { color: colors.softText, fontSize: 12, fontWeight: '900' },
   stepNumberActive: { color: colors.ink },
@@ -444,6 +644,34 @@ const styles = StyleSheet.create({
   cardEyebrow: { color: colors.mint, fontWeight: '900', fontSize: 10, letterSpacing: 1 },
   cardTitle: { color: colors.white, fontSize: 21, fontWeight: '900', letterSpacing: -0.5 },
   cardCopy: { color: colors.softText, lineHeight: 20 },
+  planLoading: { alignItems: 'center', gap: 10, borderRadius: radii.large, padding: spacing.lg },
+  planSpark: { color: colors.mint, fontSize: 30 },
+  ideaCard: { gap: 12, borderWidth: 1, borderColor: '#A98BFF45', backgroundColor: '#292349' },
+  ideaSummary: { color: colors.white, fontSize: 15, lineHeight: 22, fontWeight: '700' },
+  directionLabel: { color: colors.lavender, fontSize: 12, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  directionRow: { gap: 10, paddingRight: 4 },
+  directionCard: { width: 235, gap: 7, borderWidth: 1, borderColor: '#FFFFFF18', borderRadius: 16, backgroundColor: colors.surfaceLifted, padding: 13 },
+  directionTitle: { color: colors.white, fontSize: 16, fontWeight: '900' },
+  directionText: { color: colors.softText, fontSize: 12, lineHeight: 17 },
+  directionTwist: { color: colors.mint, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  openChoice: { color: '#D9D1F4', fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
+  missionHero: { gap: 12, borderRadius: radii.hero, padding: spacing.md },
+  sparkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  sparkChip: { overflow: 'hidden', borderRadius: radii.pill, backgroundColor: '#FFFFFF12', color: colors.softText, fontSize: 11, lineHeight: 15, paddingHorizontal: 10, paddingVertical: 7 },
+  heroSparkChip: { overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF28', borderRadius: radii.pill, backgroundColor: '#FFFFFF16', color: colors.white, fontSize: 11, lineHeight: 15, paddingHorizontal: 10, paddingVertical: 7 },
+  heroFreedom: { color: '#FFFFFFD6', fontSize: 12, fontWeight: '800' },
+  elementMissionCard: { gap: 12, borderWidth: 1, borderColor: '#8AF4D633' },
+  missionList: { gap: 9 },
+  missionCard: { gap: 6, borderWidth: 1, borderColor: '#FFFFFF1C', borderRadius: 16, backgroundColor: colors.surfaceLifted, padding: 13 },
+  missionCardDone: { borderColor: '#8AF4D670', backgroundColor: '#8AF4D610' },
+  missionCardPressed: { opacity: 0.78 },
+  missionTopLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  missionName: { flex: 1, color: colors.white, fontSize: 15, fontWeight: '900' },
+  missionDraw: { color: colors.mint, fontSize: 10, fontWeight: '900' },
+  missionDone: { color: colors.mint, fontSize: 10, fontWeight: '900' },
+  missionPrompt: { color: colors.softText, fontSize: 12, lineHeight: 17 },
+  missionPurpose: { color: colors.lavender, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  inputLabel: { color: colors.softText, fontSize: 11, fontWeight: '900' },
   input: { minHeight: 62, borderWidth: 1, borderColor: '#FFFFFF20', borderRadius: radii.medium, backgroundColor: colors.surfaceLifted, color: colors.white, padding: 12, textAlignVertical: 'top' },
   nextStepCard: { gap: 11, borderRadius: radii.large, padding: spacing.md },
   nextStepTitle: { color: colors.white, fontSize: 24, fontWeight: '900', letterSpacing: -0.8, lineHeight: 27 },
@@ -521,6 +749,15 @@ function StaticCanvasAsset({ asset, selected }: { asset: CanvasAsset; selected: 
       <View style={styles.assetContents}><Image source={{ uri: asset.imageDataUrl }} style={styles.assetImage} /><Text numberOfLines={1} style={styles.assetName}>{asset.name}</Text></View>
     </View>
   );
+}
+
+function compactDrawingPrompt(prompt: string, maxLength = 150): string {
+  const clean = prompt.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLength) return clean;
+  const firstSentence = clean.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
+  if (firstSentence && firstSentence.length <= maxLength) return firstSentence;
+  const shortened = clean.slice(0, maxLength - 1).replace(/\s+\S*$/, '').trim();
+  return `${shortened}…`;
 }
 
 function createId(): string {

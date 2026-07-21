@@ -28,6 +28,7 @@ interface AppStateValue {
   deleteProject: (projectId: string) => Promise<void>;
   loadBuilderDraft: (projectId: string) => Promise<BuilderDraft | null>;
   saveBuilderDraft: (projectId: string, draft: BuilderDraft) => Promise<BuilderDraft>;
+  generateCreativePlan: (projectId: string) => Promise<BuilderDraft>;
   generateSceneVariants: (projectId: string) => Promise<BuilderDraft>;
   testBuilderGame: (projectId: string) => Promise<GameProject>;
   transcribeAudio: (uri: string) => Promise<string>;
@@ -262,6 +263,18 @@ export function AppProvider({ children }: PropsWithChildren) {
     [requireToken],
   );
 
+  const generateCreativePlan = useCallback(async (projectId: string) => {
+    begin();
+    try {
+      return await imagineLabApi.generateCreativePlan(requireToken(), projectId);
+    } catch (error) {
+      fail(error);
+      throw error;
+    } finally {
+      end();
+    }
+  }, [begin, end, fail, requireToken]);
+
   const generateSceneVariants = useCallback(
     (projectId: string) => imagineLabApi.generateSceneVariants(requireToken(), projectId),
     [requireToken],
@@ -294,6 +307,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       deleteProject,
       loadBuilderDraft,
       saveBuilderDraft,
+      generateCreativePlan,
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,
@@ -315,6 +329,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       deleteProject,
       loadBuilderDraft,
       saveBuilderDraft,
+      generateCreativePlan,
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { imagineLabApi, resolveApiBaseUrl } from './client';
+import { imagineLabApi, resolveApiBaseUrl, resolveAudioUpload } from './client';
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -26,6 +26,7 @@ describe('child API authentication', () => {
             },
           }, 201);
         }
+        if (url.endsWith('/builder/plan')) return jsonResponse({ draft: { ...builderDraft, creativePlan } });
         if (url.endsWith('/builder/variants')) return jsonResponse({ draft: builderDraft });
         if (url.endsWith('/builder')) return jsonResponse({ draft: builderDraft });
         return jsonResponse({ projects: [] });
@@ -80,6 +81,17 @@ describe('child API authentication', () => {
     expect((variantsOptions?.headers as Record<string, string>)['Content-Type']).toBeUndefined();
   });
 
+  it('requests a persisted AI creative plan before drawing starts', async () => {
+    const planned = await imagineLabApi.generateCreativePlan('private-child-token', projectId);
+
+    expect(planned.creativePlan?.backgroundMission.title).toBe('Draw the moon garden');
+    const fetchMock = vi.mocked(fetch);
+    const options = fetchMock.mock.calls[0]?.[1];
+    expect(options).toMatchObject({ method: 'POST' });
+    expect(options?.body).toBeUndefined();
+    expect(options?.headers).toMatchObject({ Authorization: 'Bearer private-child-token' });
+  });
+
   it('uses the LAN mobile API address when Expo Web is opened from a phone', () => {
     expect(
       resolveApiBaseUrl('web', 'http://10.0.0.92:8080', undefined, 'http://localhost:8080'),
@@ -96,11 +108,28 @@ describe('child API authentication', () => {
       ),
     ).toBe('http://localhost:8080');
   });
+
+  it('uploads Expo high-quality mobile recordings as an M4A-compatible file', () => {
+    expect(resolveAudioUpload('file:///recordings/idea.m4a', 'android')).toEqual({
+      extension: 'm4a',
+      fileName: 'voice-idea.m4a',
+      mimeType: 'audio/mp4',
+    });
+  });
+
+  it('keeps the recorder Blob format and removes codec parameters on web', () => {
+    expect(resolveAudioUpload('blob:http://localhost/recording', 'web', 'audio/webm;codecs=opus')).toEqual({
+      extension: 'webm',
+      fileName: 'voice-idea.webm',
+      mimeType: 'audio/webm',
+    });
+  });
 });
 
 const projectId = '22222222-2222-4222-8222-222222222222';
 const builderDraft = {
   stage: 'build' as const,
+  creativePlan: null,
   interpretationStatus: 'pending' as const,
   interpretation: 'The bird follows the player and collects seeds.',
   assets: [
@@ -119,6 +148,37 @@ const builderDraft = {
   variants: [],
   selectedVariantId: null,
   updatedAt: '2026-07-20T00:00:00.000Z',
+};
+
+const creativePlan = {
+  projectTitle: 'Moon Garden',
+  ideaSummary: 'A moon garden can become a cozy game or a collecting challenge.',
+  gameDirections: [
+    { title: 'Grow and explore', mechanic: 'Find seeds and choose where they grow.', creativeTwist: 'The plants can react to moonlight.' },
+    { title: 'Catch the glow', mechanic: 'Collect drifting lights.', creativeTwist: 'Each color can change the garden.' },
+  ],
+  backgroundMission: {
+    title: 'Draw the moon garden',
+    prompt: 'Show where the garden grows and what the sky feels like.',
+    possibilities: ['crater flowers', 'a glass greenhouse'],
+  },
+  elementMissions: [
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      suggestedName: 'Moon seed',
+      prompt: 'Invent a seed that belongs on the moon.',
+      purpose: 'It can give the player something to collect.',
+      possibilities: ['a glowing seed', 'a sleepy seed'],
+    },
+    {
+      id: '55555555-5555-4555-8555-555555555555',
+      suggestedName: 'Garden helper',
+      prompt: 'Draw someone or something that helps the garden.',
+      purpose: 'It can guide or surprise the player.',
+      possibilities: ['a robot', 'a moon moth'],
+    },
+  ],
+  encouragement: 'Use, change, or ignore every spark.',
 };
 
 function jsonResponse(payload: unknown, status = 200): Response {

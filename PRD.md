@@ -16,7 +16,7 @@ The product also makes the creative process itself part of the learning. As chil
 
 ## 3. Goals
 
-- Let a child create a basic browser game from a natural-language description on Android.
+- Let a child begin with a natural-language idea, then shape the game through AI-guided background and game-piece drawing on Android.
 - Let the child play the generated game immediately in the app.
 - Let the child refine an existing game with follow-up natural-language requests.
 - Let the child publish a game to a public, shareable HTML link.
@@ -54,7 +54,8 @@ The product also makes the creative process itself part of the learning. As chil
 ### Child
 
 - As a child, I can create an account and link it to a guardian account.
-- As a child, I can write an idea such as “make a game where a frog catches flies” and receive a playable game.
+- As a child, I can describe an idea such as “make a family golf game” and receive several possible gameplay directions plus open-ended drawing invitations.
+- As a child, I draw the background first, then choose or invent AI-suggested characters, objects, goals, obstacles, and surprises before the first test build.
 - As a child, I can draw a background and named game objects, arrange them on one canvas, and save my work to continue later.
 - As a child, I can choose from several AI visual interpretations of my canvas before testing the game.
 - As a child, I can hold a talk button, describe a game or change aloud, and receive editable transcribed text.
@@ -82,11 +83,12 @@ The product also makes the creative process itself part of the learning. As chil
 1. A child signs in to the Expo mobile app.
 2. The child chooses **Create game** and types an idea or holds the talk button to describe it aloud.
 3. For voice input, the app records until release, the backend transcribes the bounded audio request, and the app places the result in the editable prompt field.
-4. The backend generates a basic game and a child-safe square project cover concurrently.
-5. The backend stores the game version and cover image, then the app opens a preview in a sandboxed web view.
-6. The child types or speaks an edit request in natural language.
-7. The backend updates the game bundle, saves a new version, and returns a refreshed preview.
-8. The child saves the game as a draft or publishes it.
+4. The backend creates a project cover and a creative brief containing two or three possible gameplay directions, one open background-drawing invitation, and two to five optional character/object drawing invitations.
+5. The child draws the background in their own style. AI suggestions are presented as optional sparks rather than required answers.
+6. The child draws at least one character, object, goal, obstacle, or surprise, either from an AI spark or from a completely new idea, then names and arranges the drawings.
+7. The app combines the original idea, child-authored drawings, arrangement, and behavior explanation into visual interpretations; the child chooses one before the first playable test build.
+8. The child plays the generated game in a sandboxed web view and types or speaks further edit requests.
+9. The backend saves every tested change as an immutable version, and the child can keep the game as a draft or publish it.
 
 ### Publish and play
 
@@ -117,6 +119,9 @@ The product also makes the creative process itself part of the learning. As chil
 ### Game generation and editing
 
 - Accept a short natural-language game brief.
+- Generate a persisted creative brief from the original child-authored idea with multiple gameplay directions, one background mission, and two to five element missions.
+- Keep drawing missions open-ended and optional: the child may use, change, combine, or ignore every AI suggestion.
+- Require a child-authored background and at least one child-authored game piece before generating the first test build in the mobile flow.
 - Let a child draw a background and game objects inside the app, name objects, arrange them on one canvas, and save/resume the draft.
 - Generate three to four coherent visual interpretations of the child’s saved canvas; require a child selection before generating a playable test build.
 - Support push-to-talk input for creation and edit prompts: hold to record, release to transcribe, and keep the resulting text editable before submission.
@@ -221,7 +226,7 @@ Local PostgreSQL ─────────────────────
 
 ## 12. Acceptance Criteria
 
-- A child can sign up with email/password or Google, create a game from text, and play it in the Android Expo app.
+- A child can start from text or speech, receive an AI creative brief, draw a background and at least one game piece, and play the resulting game in the Android Expo app.
 - The child can hold a voice button, speak a project or edit request, release, and receive editable transcribed text.
 - The child can submit at least one natural-language edit and see the changed game.
 - The child can save a draft and publish it.

@@ -63,6 +63,9 @@ describe("ImagineLab API", () => {
     const created = createResponse.json();
     expect(created.project.currentVersion.versionNumber).toBe(1);
     expect(created.project.currentVersion.html).toContain("Content-Security-Policy");
+    expect(created.project.builder.creativePlan.gameDirections).toHaveLength(3);
+    expect(created.project.builder.creativePlan.elementMissions).toHaveLength(3);
+    expect(created.project.builder.assets).toEqual([]);
 
     const editResponse = await app.inject({
       method: "POST",
@@ -164,7 +167,8 @@ describe("ImagineLab API", () => {
 
   it("accepts a child push-to-talk recording and returns its transcript", async () => {
     await app.close();
-    app = await buildApp({ config, generation: new StubTranscriptionService(config) });
+    const generation = new StubTranscriptionService(config);
+    app = await buildApp({ config, generation });
     const { boundary, payload } = audioUpload();
 
     const response = await app.inject({
@@ -179,6 +183,28 @@ describe("ImagineLab API", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ text: "Make a moon garden game with three friendly robots." });
+    expect(generation.lastInput).toMatchObject({ fileName: "idea.m4a", mediaType: "audio/mp4" });
+  });
+
+  it("normalizes mobile M4A MIME aliases before transcription", async () => {
+    await app.close();
+    const generation = new StubTranscriptionService(config);
+    app = await buildApp({ config, generation });
+
+    for (const mediaType of ["audio/x-m4a", "audio/aac", "application/octet-stream"]) {
+      const { boundary, payload } = audioUpload({ mediaType });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/transcriptions",
+        headers: {
+          authorization: `Bearer ${childToken}`,
+          "content-type": `multipart/form-data; boundary=${boundary}`,
+        },
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(generation.lastInput).toMatchObject({ fileName: "idea.m4a", mediaType: "audio/mp4" });
+    }
   });
 
   it("prevents a guardian from uploading a child's voice recording", async () => {
@@ -409,6 +435,7 @@ describe("ImagineLab API", () => {
     const projectId = created.json().project.id as string;
     const draft = {
       stage: "build",
+      creativePlan: created.json().project.builder.creativePlan,
       interpretationStatus: "pending",
       interpretation: null,
       assets: [
@@ -423,11 +450,37 @@ describe("ImagineLab API", () => {
           height: 1,
           zIndex: 0,
         },
+        {
+          id: "47d4c71c-13c2-40d5-aeca-85bdf7862662",
+          kind: "object",
+          missionId: created.json().project.builder.creativePlan.elementMissions[0].id,
+          name: "My forest bird",
+          imageDataUrl: "data:image/png;base64,def",
+          x: 0.35,
+          y: 0.35,
+          width: 0.28,
+          height: 0.28,
+          zIndex: 1,
+        },
       ],
       variants: [],
       selectedVariantId: null,
       updatedAt: new Date().toISOString(),
     };
+    const backgroundOnly = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${projectId}/builder`,
+      headers: childHeaders(childToken),
+      payload: { draft: { ...draft, assets: draft.assets.slice(0, 1) } },
+    });
+    expect(backgroundOnly.statusCode).toBe(200);
+    const tooEarly = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/variants`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(tooEarly.statusCode).toBe(422);
+
     const saved = await app.inject({
       method: "PUT",
       url: `/api/projects/${projectId}/builder`,
@@ -556,17 +609,26 @@ async function registerGuardian(
 }
 
 class StubTranscriptionService extends GenerationService {
-  public override async transcribeAudio(): Promise<string> {
+  public lastInput: { audio: Buffer; fileName: string; mediaType: string } | null = null;
+
+  public override async transcribeAudio(input: {
+    audio: Buffer;
+    fileName: string;
+    mediaType: string;
+  }): Promise<string> {
+    this.lastInput = input;
     return "Make a moon garden game with three friendly robots.";
   }
 }
 
-function audioUpload(): { boundary: string; payload: Buffer } {
+function audioUpload(options: { fileName?: string; mediaType?: string } = {}): { boundary: string; payload: Buffer } {
   const boundary = "imaginelab-audio-boundary";
+  const fileName = options.fileName ?? "idea.m4a";
+  const mediaType = options.mediaType ?? "audio/mp4";
   const payload = Buffer.from(
     `--${boundary}\r\n` +
-      'Content-Disposition: form-data; name="file"; filename="idea.m4a"\r\n' +
-      "Content-Type: audio/mp4\r\n\r\n" +
+      `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+      `Content-Type: ${mediaType}\r\n\r\n` +
       "pretend audio bytes\r\n" +
       `--${boundary}--\r\n`,
   );

@@ -47,6 +47,46 @@ export class ApiError extends Error {
   }
 }
 
+const audioMimeByExtension: Record<string, string> = {
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  mp3: 'audio/mpeg',
+  mp4: 'audio/mp4',
+  mpeg: 'audio/mpeg',
+  mpga: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+};
+
+const audioExtensionByMime: Record<string, string> = {
+  'audio/flac': 'flac',
+  'audio/m4a': 'm4a',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/x-flac': 'flac',
+  'audio/x-m4a': 'm4a',
+  'audio/x-wav': 'wav',
+};
+
+export function resolveAudioUpload(
+  uri: string,
+  platform: string,
+  reportedMimeType?: string,
+): { extension: string; mimeType: string; fileName: string } {
+  const cleanMimeType = reportedMimeType?.split(';')[0]?.trim().toLowerCase();
+  const uriExtension = uri.split(/[?#]/)[0]?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const extension =
+    (uriExtension && audioMimeByExtension[uriExtension] ? uriExtension : undefined) ??
+    (cleanMimeType ? audioExtensionByMime[cleanMimeType] : undefined) ??
+    (platform === 'web' ? 'webm' : 'm4a');
+  const mimeType = audioMimeByExtension[extension] ?? (platform === 'web' ? 'audio/webm' : 'audio/mp4');
+  return { extension, mimeType, fileName: `voice-idea.${extension}` };
+}
+
 async function request<T>(
   path: string,
   options: {
@@ -146,6 +186,11 @@ export const imagineLabApi = {
     return response.draft;
   },
 
+  async generateCreativePlan(token: string, projectId: string): Promise<BuilderDraft> {
+    const response = await request<{ draft: BuilderDraft }>(`/api/projects/${projectId}/builder/plan`, { method: 'POST', token });
+    return response.draft;
+  },
+
   async generateSceneVariants(token: string, projectId: string): Promise<BuilderDraft> {
     const response = await request<{ draft: BuilderDraft }>(`/api/projects/${projectId}/builder/variants`, { method: 'POST', token });
     return response.draft;
@@ -156,16 +201,23 @@ export const imagineLabApi = {
   },
 
   async transcribeAudio(token: string, uri: string): Promise<string> {
-    const isWebRecording = Platform.OS === 'web';
     const form = new FormData();
-    form.append(
-      'file',
-      {
-        uri,
-        name: `voice-idea.${isWebRecording ? 'webm' : 'm4a'}`,
-        type: isWebRecording ? 'audio/webm' : 'audio/mp4',
-      } as unknown as Blob,
-    );
+    if (Platform.OS === 'web') {
+      const recordingResponse = await fetch(uri);
+      const recordingBlob = await recordingResponse.blob();
+      const metadata = resolveAudioUpload(uri, Platform.OS, recordingBlob.type);
+      form.append('file', recordingBlob, metadata.fileName);
+    } else {
+      const metadata = resolveAudioUpload(uri, Platform.OS);
+      form.append(
+        'file',
+        {
+          uri,
+          name: metadata.fileName,
+          type: metadata.mimeType,
+        } as unknown as Blob,
+      );
+    }
     const response = await request<{ text: string }>('/api/transcriptions', {
       method: 'POST',
       body: form,
