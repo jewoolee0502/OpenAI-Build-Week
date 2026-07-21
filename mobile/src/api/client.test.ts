@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { imagineLabApi } from './client';
+import { imagineLabApi, resolveApiBaseUrl } from './client';
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -78,6 +78,23 @@ describe('child API authentication', () => {
     expect(variantsOptions?.body).toBeUndefined();
     expect(variantsOptions?.headers).toMatchObject({ Authorization: 'Bearer private-child-token' });
     expect((variantsOptions?.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
+  it('uses the LAN mobile API address when Expo Web is opened from a phone', () => {
+    expect(
+      resolveApiBaseUrl('web', 'http://10.0.0.92:8080', undefined, 'http://localhost:8080'),
+    ).toBe('http://10.0.0.92:8080');
+  });
+
+  it('keeps an explicit web API address as the highest-priority web override', () => {
+    expect(
+      resolveApiBaseUrl(
+        'web',
+        'http://10.0.0.92:8080',
+        'http://localhost:8080/',
+        'http://localhost:8080',
+      ),
+    ).toBe('http://localhost:8080');
   });
 });
 

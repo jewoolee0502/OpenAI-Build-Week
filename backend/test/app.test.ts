@@ -515,7 +515,7 @@ describe("ImagineLab API", () => {
 });
 
 function childHeaders(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  return { authorization: `Bearer ${token}` };
 }
 
 async function createGuest(app: FastifyInstance): Promise<{

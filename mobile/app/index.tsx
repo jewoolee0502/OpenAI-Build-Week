@@ -92,7 +92,11 @@ export default function ChildHomeScreen() {
             <Text style={styles.heroBody}>
               Join as a guest, then talk, draw, arrange, test, and keep improving your game. We&apos;ll give you a Child ID a parent can connect.
             </Text>
-            <ActionButton label="✦  Join as Guest" loading={isLoading} onPress={() => void joinAsGuest()} />
+            <ActionButton
+              label="✦  Join as Guest"
+              loading={isLoading}
+              onPress={() => void joinAsGuest().catch(() => undefined)}
+            />
           </LinearGradient>
           {errorMessage ? <ErrorBanner message={errorMessage} onDismiss={clearError} /> : null}
           <Text style={styles.guestPrivacy}>Your private login token stays on this device. Only share the Child ID.</Text>

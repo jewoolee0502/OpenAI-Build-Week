@@ -17,11 +17,25 @@ const platformDefaultUrl = Platform.select({
 const configuredMobileUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 const configuredWebUrl = process.env.EXPO_PUBLIC_WEB_API_BASE_URL?.trim();
 
-export const apiBaseUrl = (
-  Platform.OS === 'web'
-    ? configuredWebUrl || 'http://localhost:8080'
-    : configuredMobileUrl || platformDefaultUrl
-)?.replace(/\/$/, '');
+export function resolveApiBaseUrl(
+  platform: string,
+  mobileUrl: string | undefined,
+  webUrl: string | undefined,
+  nativeDefaultUrl: string | undefined,
+): string | undefined {
+  return (
+    platform === 'web'
+      ? webUrl || mobileUrl || 'http://localhost:8080'
+      : mobileUrl || nativeDefaultUrl
+  )?.replace(/\/$/, '');
+}
+
+export const apiBaseUrl = resolveApiBaseUrl(
+  Platform.OS,
+  configuredMobileUrl,
+  configuredWebUrl,
+  platformDefaultUrl,
+);
 
 export class ApiError extends Error {
   constructor(

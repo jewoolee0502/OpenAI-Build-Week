@@ -19,7 +19,9 @@ const envSchema = z.object({
   OPENAI_TRANSCRIPTION_MODEL: z.string().default("gpt-4o-mini-transcribe"),
   ALLOWED_ORIGINS: z
     .string()
-    .default("http://localhost:3000,http://localhost:5173,http://localhost:8080"),
+    .default(
+      "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:8081,http://localhost:8082",
+    ),
 });
 
 export interface AppConfig {
