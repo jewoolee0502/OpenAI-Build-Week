@@ -9,8 +9,8 @@ import {
   useState,
 } from 'react';
 
-import { ApiError, imagineLabApi } from '@/api/client';
-import type { BuilderDraft, ChildAccount, GameProject, GuestSession } from '@/api/types';
+import { ApiError, apiBaseUrl, imagineLabApi } from '@/api/client';
+import type { AuthenticatedImageSource, BuilderDraft, ChildAccount, GameProject, GuestSession } from '@/api/types';
 import { childSessionStorage } from '@/state/child-session-storage';
 
 interface AppStateValue {
@@ -28,9 +28,11 @@ interface AppStateValue {
   deleteProject: (projectId: string) => Promise<void>;
   loadBuilderDraft: (projectId: string) => Promise<BuilderDraft | null>;
   saveBuilderDraft: (projectId: string, draft: BuilderDraft) => Promise<BuilderDraft>;
+  generateCreativePlan: (projectId: string) => Promise<BuilderDraft>;
   generateSceneVariants: (projectId: string) => Promise<BuilderDraft>;
   testBuilderGame: (projectId: string) => Promise<GameProject>;
   transcribeAudio: (uri: string) => Promise<string>;
+  projectImageSource: (project: GameProject) => AuthenticatedImageSource | null;
   clearError: () => void;
 }
 
@@ -235,6 +237,14 @@ export function AppProvider({ children }: PropsWithChildren) {
     [requireToken],
   );
 
+  const projectImageSource = useCallback((project: GameProject): AuthenticatedImageSource | null => {
+    if (!session?.token || !apiBaseUrl || !project.profileImageUrl) return null;
+    return {
+      uri: `${apiBaseUrl}${project.profileImageUrl}`,
+      headers: { Authorization: `Bearer ${session.token}` },
+    };
+  }, [session?.token]);
+
   const deleteProject = useCallback(async (projectId: string) => {
     begin();
     try {
@@ -252,6 +262,18 @@ export function AppProvider({ children }: PropsWithChildren) {
     (projectId: string, draft: BuilderDraft) => imagineLabApi.saveBuilderDraft(requireToken(), projectId, draft),
     [requireToken],
   );
+
+  const generateCreativePlan = useCallback(async (projectId: string) => {
+    begin();
+    try {
+      return await imagineLabApi.generateCreativePlan(requireToken(), projectId);
+    } catch (error) {
+      fail(error);
+      throw error;
+    } finally {
+      end();
+    }
+  }, [begin, end, fail, requireToken]);
 
   const generateSceneVariants = useCallback(
     (projectId: string) => imagineLabApi.generateSceneVariants(requireToken(), projectId),
@@ -285,9 +307,11 @@ export function AppProvider({ children }: PropsWithChildren) {
       deleteProject,
       loadBuilderDraft,
       saveBuilderDraft,
+      generateCreativePlan,
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,
+      projectImageSource,
       clearError,
     }),
     [
@@ -305,9 +329,11 @@ export function AppProvider({ children }: PropsWithChildren) {
       deleteProject,
       loadBuilderDraft,
       saveBuilderDraft,
+      generateCreativePlan,
       generateSceneVariants,
       testBuilderGame,
       transcribeAudio,
+      projectImageSource,
       clearError,
     ],
   );

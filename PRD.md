@@ -16,10 +16,11 @@ The product also makes the creative process itself part of the learning. As chil
 
 ## 3. Goals
 
-- Let a child create a basic browser game from a natural-language description on Android.
+- Let a child begin with a natural-language idea, then shape the game through AI-guided background and game-piece drawing on Android.
 - Let the child play the generated game immediately in the app.
 - Let the child refine an existing game with follow-up natural-language requests.
 - Let the child publish a game to a public, shareable HTML link.
+- Give every project a generated square cover image based on its original game idea.
 - Give a linked guardian visibility into their child's projects and development activity.
 - Give a guardian evidence-based, project-specific AI observations and conversation starters.
 - Let anyone with a published game link, including a guardian, play the game without creating an account.
@@ -53,13 +54,15 @@ The product also makes the creative process itself part of the learning. As chil
 ### Child
 
 - As a child, I can create an account and link it to a guardian account.
-- As a child, I can write an idea such as “make a game where a frog catches flies” and receive a playable game.
+- As a child, I can describe an idea such as “make a family golf game” and receive several possible gameplay directions plus open-ended drawing invitations.
+- As a child, I draw the background first, then choose or invent AI-suggested characters, objects, goals, obstacles, and surprises before the first test build.
 - As a child, I can draw a background and named game objects, arrange them on one canvas, and save my work to continue later.
 - As a child, I can choose from several AI visual interpretations of my canvas before testing the game.
 - As a child, I can hold a talk button, describe a game or change aloud, and receive editable transcribed text.
 - As a child, I can play my game inside the mobile app.
 - As a child, I can ask for a change such as “make it faster” or “add three lives,” then preview the updated game.
 - As a child, I can save a draft game.
+- As a child, each game I create receives its own recognizable cover image.
 - As a child, I can publish a saved game and copy or share its public link.
 
 ### Guardian
@@ -80,11 +83,12 @@ The product also makes the creative process itself part of the learning. As chil
 1. A child signs in to the Expo mobile app.
 2. The child chooses **Create game** and types an idea or holds the talk button to describe it aloud.
 3. For voice input, the app records until release, the backend transcribes the bounded audio request, and the app places the result in the editable prompt field.
-4. While the backend interprets the high-level game idea, the child draws a background and named objects on separate sheets and arranges them on one canvas.
-5. The child saves the canvas, chooses one of several AI visual interpretations, and opens a playable preview in a sandboxed web view.
-6. The child types or speaks an edit request for a selected object or the game.
-7. The backend updates the game bundle, saves a new version, and returns a refreshed preview.
-8. The child saves the game as a draft or publishes it.
+4. The backend creates a project cover and a creative brief containing two or three possible gameplay directions, one open background-drawing invitation, and two to five optional character/object drawing invitations.
+5. The child draws the background in their own style. AI suggestions are presented as optional sparks rather than required answers.
+6. The child draws at least one character, object, goal, obstacle, or surprise, either from an AI spark or from a completely new idea, then names and arranges the drawings.
+7. The app combines the original idea, child-authored drawings, arrangement, and behavior explanation into visual interpretations; the child chooses one before the first playable test build.
+8. The child plays the generated game in a sandboxed web view and types or speaks further edit requests.
+9. The backend saves every tested change as an immutable version, and the child can keep the game as a draft or publish it.
 
 ### Publish and play
 
@@ -115,6 +119,9 @@ The product also makes the creative process itself part of the learning. As chil
 ### Game generation and editing
 
 - Accept a short natural-language game brief.
+- Generate a persisted creative brief from the original child-authored idea with multiple gameplay directions, one background mission, and two to five element missions.
+- Keep drawing missions open-ended and optional: the child may use, change, combine, or ignore every AI suggestion.
+- Require a child-authored background and at least one child-authored game piece before generating the first test build in the mobile flow.
 - Let a child draw a background and game objects inside the app, name objects, arrange them on one canvas, and save/resume the draft.
 - Generate three to four coherent visual interpretations of the child’s saved canvas; require a child selection before generating a playable test build.
 - Support push-to-talk input for creation and edit prompts: hold to record, release to transcribe, and keep the resulting text editable before submission.
@@ -129,6 +136,7 @@ The product also makes the creative process itself part of the learning. As chil
 ### Projects and publishing
 
 - List a child's saved projects with title, thumbnail or placeholder, last-updated time, and publish status.
+- Generate one stable project cover from the original child-authored game prompt, store it outside the game bundle, and expose it only through an authorized backend image route.
 - Support draft and published states.
 - Generate a stable public URL for a published project.
 - Serve the latest published version at that URL.
@@ -164,7 +172,7 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 | Authentication and app data | Local PostgreSQL-backed application services | Keeps account, guardian-link, project, version, activity, and insight data in one local relational store. |
 | Game bundle storage | Local PostgreSQL | Stores versioned HTML/CSS/JavaScript bundles with their project-version records for the MVP. |
 | Backend API | TypeScript, Node.js, Fastify | Keeps the OpenAI API key off devices; handles generation, authorization, publishing, and public serving. |
-| AI integration | Official OpenAI server SDK using the Responses API and Audio Transcriptions API | Provides server-side generation, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
+| AI integration | Official OpenAI server SDK using the Responses API, Image API, and Audio Transcriptions API | Provides server-side games, project covers, iterative editing, insights, and speech-to-text without exposing credentials to either client. |
 | Public game delivery | Fastify public route | Serves a stable `https://<domain>/g/<slug>` link from the product's own backend. |
 | Client/backend communication | HTTPS JSON API with application authentication | Lets the backend authenticate the signed-in user and enforce project permissions for both clients. |
 | Observability | Cloud Logging | Captures backend errors and generation failures for the MVP. |
@@ -176,8 +184,8 @@ The selected stack optimizes for a small Android-first hackathon build: one prim
 Child Expo app (React Native / TypeScript, phone + tablet) ─┐
 Parent website (React / TypeScript / Vite) ─────────────────┼─ Fastify API
                                                            │   ├─ authenticates requests and enforces role/link permissions
-                                                           │   ├─ calls OpenAI for generation, edits, parent insights, and transcription
-                                                           │   ├─ writes versions/bundles to local PostgreSQL
+                                                           │   ├─ calls OpenAI for games, project covers, edits, parent insights, and transcription
+                                                           │   ├─ writes versions, bundles, and project-cover bytes to local PostgreSQL
                                                            │   └─ serves public route: /g/:slug
                                                            │        └─ sandboxed browser page loads published game bundle
 Local PostgreSQL ───────────────────────────────────────────┘
@@ -198,6 +206,7 @@ Local PostgreSQL ─────────────────────
 | `guardianLinks` | `childUserId`, `guardianUserId`, `status`, `createdAt` |
 | `projects` | `id`, `childUserId`, `title`, `status` (`draft` or `published`), `currentVersionId`, `publishedVersionId`, `publicSlug`, `createdAt`, `updatedAt` |
 | `projectVersions` | `id`, `projectId`, `versionNumber`, `prompt`, `bundleStoragePath`, `createdAt` |
+| `projectProfileImages` | `id`, `projectId`, `sourcePrompt`, `mimeType`, `imageData`, `provider`, `model`, `fallbackReason`, `createdAt` |
 | `activityEvents` | `id`, `childUserId`, `projectId`, `type`, `createdAt`, `metadata` |
 | `childInsights` | `id`, `childUserId`, `scope`, `sourceProjectIds`, `sourceVersionIds`, `summary`, `dimensions`, `interests`, `conversationStarters`, `createdAt` |
 | PostgreSQL project bundle | Versioned `index.html`, CSS, JavaScript, and approved static assets |
@@ -211,15 +220,17 @@ Local PostgreSQL ─────────────────────
 - Render generated games inside a sandboxed iframe on the public page. The game must not gain access to the parent page, account data, backend credentials, or arbitrary external network destinations.
 - Do not allow generated code to embed secrets or backend credentials.
 - Validate and constrain generated output before saving or publishing it.
+- Keep generated project covers separate from executable game bundles, retain provider moderation, and serve covers with a fixed image MIME type, private caching, and `nosniff` protection.
 - Record server-side audit events for project creation, edits, publishing, and unpublishing.
 - Treat parent AI insights as sensitive child-related data: authorize them server-side, keep supporting evidence scoped to the linked child's portfolio, and avoid unsupported developmental claims.
 
 ## 12. Acceptance Criteria
 
-- A child can sign up with email/password or Google, create a game from text, and play it in the Android Expo app.
+- A child can start from text or speech, receive an AI creative brief, draw a background and at least one game piece, and play the resulting game in the Android Expo app.
 - The child can hold a voice button, speak a project or edit request, release, and receive editable transcribed text.
 - The child can submit at least one natural-language edit and see the changed game.
 - The child can save a draft and publish it.
+- Every newly created project has a stored profile image and an authenticated profile-image URL; a safe local placeholder is used if image generation is unavailable or blocked.
 - A published game opens and plays at a public browser URL without authentication.
 - A guardian linked to the child can sign in to the parent website and view the child's project list and activity timeline.
 - The linked guardian can generate one child-level insight across the child's available portfolio that includes project evidence and conversation starters and clearly states that it is not an assessment.

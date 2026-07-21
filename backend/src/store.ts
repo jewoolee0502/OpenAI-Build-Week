@@ -15,9 +15,11 @@ import {
   type Project,
   type ProjectInsight,
   type ProjectInsightContent,
+  type ProjectProfileImage,
   type ProjectVersion,
   type ProjectWithCurrentVersion,
 } from "./domain.js";
+import type { GeneratedProjectImage } from "./project-image.js";
 
 export type SessionKind = "child_guest" | "guardian_web";
 
@@ -58,6 +60,7 @@ export interface ApplicationStore {
     title: string;
     prompt: string;
     html: string;
+    profileImage: GeneratedProjectImage;
   }): Promise<ProjectWithCurrentVersion>;
   addVersion(input: {
     projectId: string;
@@ -67,6 +70,7 @@ export interface ApplicationStore {
   listProjectsForChild(childUserId: string): Promise<ProjectWithCurrentVersion[]>;
   listProjectsWithVersionsForChild(childUserId: string): Promise<ProjectWithVersions[]>;
   getProject(projectId: string): Promise<ProjectWithCurrentVersion | null>;
+  getProjectProfileImage(projectId: string): Promise<ProjectProfileImage | null>;
   deleteProject(projectId: string): Promise<boolean>;
   saveBuilderDraft(projectId: string, draft: BuilderDraft): Promise<ProjectWithCurrentVersion | null>;
   getVersions(projectId: string): Promise<ProjectVersion[]>;
@@ -158,6 +162,18 @@ interface RadarValueRow extends QueryResultRow {
   label: string;
   observation: string;
   evidence: unknown;
+}
+
+interface ProjectProfileImageRow extends QueryResultRow {
+  id: string;
+  project_id: string;
+  source_prompt: string;
+  mime_type: "image/webp" | "image/svg+xml";
+  image_data: Buffer;
+  provider: "openai" | "demo";
+  model: string;
+  fallback_reason: "moderation_blocked" | "provider_error" | null;
+  created_at: Date | string;
 }
 
 export class PostgresStore implements ApplicationStore {
@@ -311,6 +327,7 @@ export class PostgresStore implements ApplicationStore {
     title: string;
     prompt: string;
     html: string;
+    profileImage: GeneratedProjectImage;
   }): Promise<ProjectWithCurrentVersion> {
     return this.database.transaction(async (client) => {
       const projectResult = await client.query<ProjectRow>(
@@ -332,6 +349,20 @@ export class PostgresStore implements ApplicationStore {
       const updatedResult = await client.query<ProjectRow>(
         `update projects set current_version_id = $2 where id = $1 returning *`,
         [projectRow.id, versionRow.id],
+      );
+      await client.query(
+        `insert into project_profile_images (
+           project_id, source_prompt, mime_type, image_data, provider, model, fallback_reason
+         ) values ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          projectRow.id,
+          input.profileImage.sourcePrompt,
+          input.profileImage.mimeType,
+          input.profileImage.data,
+          input.profileImage.provider,
+          input.profileImage.model,
+          input.profileImage.fallbackReason ?? null,
+        ],
       );
       await this.insertActivity(client, input.childUserId, projectRow.id, "create", {
         prompt: input.prompt,
@@ -413,6 +444,26 @@ export class PostgresStore implements ApplicationStore {
       [projectId],
     );
     return result.rows[0] ? projectWithVersionFromRow(result.rows[0]) : null;
+  }
+
+  public async getProjectProfileImage(projectId: string): Promise<ProjectProfileImage | null> {
+    const result = await this.database.pool.query<ProjectProfileImageRow>(
+      "select * from project_profile_images where project_id = $1",
+      [projectId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      sourcePrompt: row.source_prompt,
+      mimeType: row.mime_type,
+      data: row.image_data,
+      provider: row.provider,
+      model: row.model,
+      fallbackReason: row.fallback_reason,
+      createdAt: iso(row.created_at),
+    };
   }
 
   public async deleteProject(projectId: string): Promise<boolean> {
@@ -790,6 +841,7 @@ function projectFromRow(row: ProjectRow): Project {
     currentVersionId: row.current_version_id,
     publishedVersionId: row.published_version_id,
     publicSlug: row.public_slug,
+    profileImageUrl: `/api/projects/${row.id}/profile-image`,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     ...(row.builder_draft ? { builder: row.builder_draft } : {}),

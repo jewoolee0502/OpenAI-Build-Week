@@ -10,7 +10,12 @@ const canvasKitWasm = require('canvaskit-wasm/bin/full/canvaskit.wasm') as strin
 interface DrawingSheetProps {
   onSave: (imageDataUrl: string) => void;
   onCancel: () => void;
+  onSpeak?: () => void;
   fullScreen?: boolean;
+  projectTitle?: string;
+  promptTitle?: string;
+  prompt?: string;
+  drawingKind?: 'background' | 'object';
 }
 
 export function DrawingSheet(props: DrawingSheetProps) {

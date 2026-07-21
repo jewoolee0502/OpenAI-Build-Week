@@ -12,6 +12,7 @@ export type BuilderStage = z.infer<typeof builderStageSchema>;
 export const canvasAssetSchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(["background", "object"]),
+  missionId: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(80),
   imageDataUrl: z.string().max(5_000_000),
   x: z.number().min(0).max(1),
@@ -30,8 +31,33 @@ export const sceneVariantSchema = z.object({
 });
 export type SceneVariant = z.infer<typeof sceneVariantSchema>;
 
+export const creativePlanSchema = z.object({
+  projectTitle: z.string().min(1).max(80),
+  ideaSummary: z.string().min(1).max(400),
+  gameDirections: z.array(z.object({
+    title: z.string().min(1).max(60),
+    mechanic: z.string().min(1).max(180),
+    creativeTwist: z.string().min(1).max(180),
+  })).min(2).max(3),
+  backgroundMission: z.object({
+    title: z.string().min(1).max(80),
+    prompt: z.string().min(1).max(320),
+    possibilities: z.array(z.string().min(1).max(100)).min(2).max(4),
+  }),
+  elementMissions: z.array(z.object({
+    id: z.string().uuid(),
+    suggestedName: z.string().min(1).max(80),
+    prompt: z.string().min(1).max(320),
+    purpose: z.string().min(1).max(180),
+    possibilities: z.array(z.string().min(1).max(100)).min(2).max(4),
+  })).min(2).max(5),
+  encouragement: z.string().min(1).max(240),
+});
+export type CreativePlan = z.infer<typeof creativePlanSchema>;
+
 export const builderDraftSchema = z.object({
   stage: builderStageSchema,
+  creativePlan: creativePlanSchema.nullable().default(null),
   interpretationStatus: z.enum(["pending", "ready", "failed"]),
   interpretation: z.string().max(500).nullable(),
   assets: z.array(canvasAssetSchema).max(30),
@@ -96,9 +122,22 @@ export interface Project {
   currentVersionId: string;
   publishedVersionId: string | null;
   publicSlug: string | null;
+  profileImageUrl: string;
   createdAt: string;
   updatedAt: string;
   builder?: BuilderDraft;
+}
+
+export interface ProjectProfileImage {
+  id: string;
+  projectId: string;
+  sourcePrompt: string;
+  mimeType: "image/webp" | "image/svg+xml";
+  data: Buffer;
+  provider: "openai" | "demo";
+  model: string;
+  fallbackReason: "moderation_blocked" | "provider_error" | null;
+  createdAt: string;
 }
 
 export interface ActivityEvent {

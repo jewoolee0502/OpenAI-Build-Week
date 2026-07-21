@@ -20,6 +20,7 @@ describe("ImagineLab API", () => {
       databaseUrl: testDatabaseUrl,
       autoMigrate: true,
       openAiModel: "gpt-5.6",
+      openAiImageModel: "gpt-image-2",
       openAiTranscriptionModel: "gpt-4o-mini-transcribe",
       allowedOrigins: ["http://localhost:3000"],
     };
@@ -34,6 +35,23 @@ describe("ImagineLab API", () => {
     await app.close();
   });
 
+  it("allows browser preflight requests for builder updates and deletes", async () => {
+    const putPreflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/projects/example/builder",
+      headers: {
+        origin: "http://localhost:3000",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
+
+    expect(putPreflight.statusCode).toBe(204);
+    expect(putPreflight.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+    expect(putPreflight.headers["access-control-allow-methods"]).toContain("PUT");
+    expect(putPreflight.headers["access-control-allow-methods"]).toContain("DELETE");
+  });
+
   it("creates, edits, and publishes a playable project", async () => {
     const createResponse = await app.inject({
       method: "POST",
@@ -45,6 +63,9 @@ describe("ImagineLab API", () => {
     const created = createResponse.json();
     expect(created.project.currentVersion.versionNumber).toBe(1);
     expect(created.project.currentVersion.html).toContain("Content-Security-Policy");
+    expect(created.project.builder.creativePlan.gameDirections).toHaveLength(3);
+    expect(created.project.builder.creativePlan.elementMissions).toHaveLength(3);
+    expect(created.project.builder.assets).toEqual([]);
 
     const editResponse = await app.inject({
       method: "POST",
@@ -78,9 +99,76 @@ describe("ImagineLab API", () => {
     expect(publicResponse.body).toContain("Made with ImagineLab");
   });
 
+  it("creates every project with a stable profile-image URL", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A fox follows fireflies through a crystal forest" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = response.json().project;
+    expect(project.profileImageUrl).toBe(`/api/projects/${project.id}/profile-image`);
+  });
+
+  it("serves the stored project profile image to its child owner", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A whale carries a tiny garden across the clouds" },
+    });
+    const projectId = created.json().project.id as string;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: childHeaders(childToken),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/svg+xml");
+    expect(response.headers["cache-control"]).toContain("private");
+    expect(response.rawPayload.toString("utf8")).toContain("<svg");
+  });
+
+  it("allows only the owner or a linked guardian to read a project profile image", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers: childHeaders(childToken),
+      payload: { prompt: "A moon rabbit sorts colorful comets" },
+    });
+    const projectId = created.json().project.id as string;
+    const linkedGuardian = await registerGuardian(app, "image-linked@example.com");
+    const unlinkedGuardian = await registerGuardian(app, "image-unlinked@example.com");
+
+    const denied = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: { cookie: unlinkedGuardian.cookie },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/guardian/children/link",
+      headers: { cookie: linkedGuardian.cookie, "content-type": "application/json" },
+      payload: { childId: (await getMe(app, childToken)).childId },
+    });
+    const allowed = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/profile-image`,
+      headers: { cookie: linkedGuardian.cookie },
+    });
+    expect(allowed.statusCode).toBe(200);
+  });
+
   it("accepts a child push-to-talk recording and returns its transcript", async () => {
     await app.close();
-    app = await buildApp({ config, generation: new StubTranscriptionService(config) });
+    const generation = new StubTranscriptionService(config);
+    app = await buildApp({ config, generation });
     const { boundary, payload } = audioUpload();
 
     const response = await app.inject({
@@ -95,6 +183,28 @@ describe("ImagineLab API", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ text: "Make a moon garden game with three friendly robots." });
+    expect(generation.lastInput).toMatchObject({ fileName: "idea.m4a", mediaType: "audio/mp4" });
+  });
+
+  it("normalizes mobile M4A MIME aliases before transcription", async () => {
+    await app.close();
+    const generation = new StubTranscriptionService(config);
+    app = await buildApp({ config, generation });
+
+    for (const mediaType of ["audio/x-m4a", "audio/aac", "application/octet-stream"]) {
+      const { boundary, payload } = audioUpload({ mediaType });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/transcriptions",
+        headers: {
+          authorization: `Bearer ${childToken}`,
+          "content-type": `multipart/form-data; boundary=${boundary}`,
+        },
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(generation.lastInput).toMatchObject({ fileName: "idea.m4a", mediaType: "audio/mp4" });
+    }
   });
 
   it("prevents a guardian from uploading a child's voice recording", async () => {
@@ -325,6 +435,7 @@ describe("ImagineLab API", () => {
     const projectId = created.json().project.id as string;
     const draft = {
       stage: "build",
+      creativePlan: created.json().project.builder.creativePlan,
       interpretationStatus: "pending",
       interpretation: null,
       assets: [
@@ -339,11 +450,37 @@ describe("ImagineLab API", () => {
           height: 1,
           zIndex: 0,
         },
+        {
+          id: "47d4c71c-13c2-40d5-aeca-85bdf7862662",
+          kind: "object",
+          missionId: created.json().project.builder.creativePlan.elementMissions[0].id,
+          name: "My forest bird",
+          imageDataUrl: "data:image/png;base64,def",
+          x: 0.35,
+          y: 0.35,
+          width: 0.28,
+          height: 0.28,
+          zIndex: 1,
+        },
       ],
       variants: [],
       selectedVariantId: null,
       updatedAt: new Date().toISOString(),
     };
+    const backgroundOnly = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${projectId}/builder`,
+      headers: childHeaders(childToken),
+      payload: { draft: { ...draft, assets: draft.assets.slice(0, 1) } },
+    });
+    expect(backgroundOnly.statusCode).toBe(200);
+    const tooEarly = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/variants`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(tooEarly.statusCode).toBe(422);
+
     const saved = await app.inject({
       method: "PUT",
       url: `/api/projects/${projectId}/builder`,
@@ -355,7 +492,7 @@ describe("ImagineLab API", () => {
     const variants = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/builder/variants`,
-      headers: childHeaders(childToken),
+      headers: { authorization: `Bearer ${childToken}` },
     });
     expect(variants.statusCode).toBe(200);
     expect(variants.json().draft.variants).toHaveLength(4);
@@ -363,9 +500,38 @@ describe("ImagineLab API", () => {
     const withoutSelection = await app.inject({
       method: "POST",
       url: `/api/projects/${projectId}/builder/test`,
-      headers: childHeaders(childToken),
+      headers: { authorization: `Bearer ${childToken}` },
     });
     expect(withoutSelection.statusCode).toBe(422);
+
+    const draftWithSelection = {
+      ...variants.json().draft,
+      interpretation: "The bird follows the player's finger and collects glowing seeds.",
+      selectedVariantId: variants.json().draft.variants[0].id,
+    };
+    const selected = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${projectId}/builder`,
+      headers: childHeaders(childToken),
+      payload: { draft: draftWithSelection },
+    });
+    expect(selected.statusCode).toBe(200);
+
+    const testBuild = await app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/builder/test`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(testBuild.statusCode).toBe(201);
+    expect(testBuild.json().project.currentVersion.versionNumber).toBe(2);
+
+    const readyDraft = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}/builder`,
+      headers: { authorization: `Bearer ${childToken}` },
+    });
+    expect(readyDraft.json().draft.stage).toBe("ready_to_publish");
+    expect(readyDraft.json().draft.interpretation).toContain("follows the player's finger");
   });
 
   it("deletes only the owner's project and removes its public game", async () => {
@@ -402,7 +568,7 @@ describe("ImagineLab API", () => {
 });
 
 function childHeaders(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  return { authorization: `Bearer ${token}` };
 }
 
 async function createGuest(app: FastifyInstance): Promise<{
@@ -443,17 +609,26 @@ async function registerGuardian(
 }
 
 class StubTranscriptionService extends GenerationService {
-  public override async transcribeAudio(): Promise<string> {
+  public lastInput: { audio: Buffer; fileName: string; mediaType: string } | null = null;
+
+  public override async transcribeAudio(input: {
+    audio: Buffer;
+    fileName: string;
+    mediaType: string;
+  }): Promise<string> {
+    this.lastInput = input;
     return "Make a moon garden game with three friendly robots.";
   }
 }
 
-function audioUpload(): { boundary: string; payload: Buffer } {
+function audioUpload(options: { fileName?: string; mediaType?: string } = {}): { boundary: string; payload: Buffer } {
   const boundary = "imaginelab-audio-boundary";
+  const fileName = options.fileName ?? "idea.m4a";
+  const mediaType = options.mediaType ?? "audio/mp4";
   const payload = Buffer.from(
     `--${boundary}\r\n` +
-      'Content-Disposition: form-data; name="file"; filename="idea.m4a"\r\n' +
-      "Content-Type: audio/mp4\r\n\r\n" +
+      `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+      `Content-Type: ${mediaType}\r\n\r\n` +
       "pretend audio bytes\r\n" +
       `--${boundary}--\r\n`,
   );

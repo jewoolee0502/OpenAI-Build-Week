@@ -4,6 +4,7 @@ export type BuilderStage = 'build' | 'choose_design' | 'test' | 'ready_to_publis
 export interface CanvasAsset {
   id: string;
   kind: 'background' | 'object';
+  missionId?: string;
   name: string;
   imageDataUrl: string;
   x: number;
@@ -20,8 +21,32 @@ export interface SceneVariant {
   previewDataUrl: string;
 }
 
+export interface CreativePlan {
+  projectTitle: string;
+  ideaSummary: string;
+  gameDirections: {
+    title: string;
+    mechanic: string;
+    creativeTwist: string;
+  }[];
+  backgroundMission: {
+    title: string;
+    prompt: string;
+    possibilities: string[];
+  };
+  elementMissions: {
+    id: string;
+    suggestedName: string;
+    prompt: string;
+    purpose: string;
+    possibilities: string[];
+  }[];
+  encouragement: string;
+}
+
 export interface BuilderDraft {
   stage: BuilderStage;
+  creativePlan: CreativePlan | null;
   interpretationStatus: 'pending' | 'ready' | 'failed';
   interpretation: string | null;
   assets: CanvasAsset[];
@@ -60,10 +85,16 @@ export interface GameProject {
   currentVersionId: string;
   publishedVersionId: string | null;
   publicSlug: string | null;
+  profileImageUrl: string;
   createdAt: string;
   updatedAt: string;
   currentVersion: GameVersion;
   builder?: BuilderDraft;
+}
+
+export interface AuthenticatedImageSource {
+  uri: string;
+  headers: { Authorization: string };
 }
 
 export interface GenerationSummary {

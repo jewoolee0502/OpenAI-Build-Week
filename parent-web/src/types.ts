@@ -33,10 +33,14 @@ export interface GameProject {
   currentVersionId: string;
   publishedVersionId: string | null;
   publicSlug: string | null;
+  profileImageUrl?: string;
   createdAt: string;
   updatedAt: string;
   currentVersion: GameVersion;
   versions: GameVersion[];
+  builder?: {
+    assets: Array<{ kind: 'background' | 'object'; name: string }>;
+  };
 }
 
 export type ActivityType =

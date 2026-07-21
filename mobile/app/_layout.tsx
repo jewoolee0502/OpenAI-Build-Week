@@ -17,7 +17,8 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.ink },
               animation: 'slide_from_right',
             }}>
-            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="new-project" />
             <Stack.Screen name="studio/[projectId]" />
             <Stack.Screen name="builder/[projectId]" />
           </Stack>

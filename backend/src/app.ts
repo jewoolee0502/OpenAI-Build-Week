@@ -7,8 +7,10 @@ import { z, ZodError } from "zod";
 import { AuthService, guardianSessionCookie } from "./auth.js";
 import type { AppConfig } from "./config.js";
 import { Database } from "./database.js";
+import { createWorkshopDraft } from "./demo-game.js";
 import {
   type AuthenticatedUser,
+  type CreativePlan,
   type ProjectWithCurrentVersion,
   createProjectBodySchema,
   editProjectBodySchema,
@@ -19,20 +21,82 @@ import {
   type BuilderDraft,
 } from "./domain.js";
 import { GenerationService } from "./generation.js";
-import { renderPublicGamePage, UnsafeGameBundleError } from "./safety.js";
+import { ProjectImageService } from "./project-image.js";
+import { renderPublicGamePage, UnsafeGameBundleError, validateAndHardenGameHtml } from "./safety.js";
 import { type ApplicationStore, PostgresStore } from "./store.js";
 
 const projectParamsSchema = z.object({ projectId: z.string().uuid() });
 const childParamsSchema = z.object({ childUserId: z.string().uuid() });
 const guardianProjectParamsSchema = childParamsSchema.extend({ projectId: z.string().uuid() });
 const slugParamsSchema = z.object({ slug: z.string().regex(/^[a-z0-9-]{4,80}$/) });
-const supportedAudioTypes = new Set([
-  "audio/mp4",
-  "audio/m4a",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/webm",
+const audioTypeAliases = new Map<string, string>([
+  ["audio/flac", "audio/flac"],
+  ["audio/m4a", "audio/mp4"],
+  ["audio/mp3", "audio/mpeg"],
+  ["audio/mp4", "audio/mp4"],
+  ["audio/mpeg", "audio/mpeg"],
+  ["audio/ogg", "audio/ogg"],
+  ["audio/wav", "audio/wav"],
+  ["audio/webm", "audio/webm"],
+  ["audio/x-flac", "audio/flac"],
+  ["audio/x-m4a", "audio/mp4"],
+  ["audio/x-mpeg", "audio/mpeg"],
+  ["audio/x-wav", "audio/wav"],
+  ["application/ogg", "audio/ogg"],
+  ["video/mp4", "audio/mp4"],
 ]);
+
+const audioTypeByExtension = new Map<string, string>([
+  ["flac", "audio/flac"],
+  ["m4a", "audio/mp4"],
+  ["mp3", "audio/mpeg"],
+  ["mp4", "audio/mp4"],
+  ["mpeg", "audio/mpeg"],
+  ["mpga", "audio/mpeg"],
+  ["ogg", "audio/ogg"],
+  ["wav", "audio/wav"],
+  ["webm", "audio/webm"],
+]);
+
+const audioExtensionByType = new Map<string, string>([
+  ["audio/flac", "flac"],
+  ["audio/mp4", "m4a"],
+  ["audio/mpeg", "mp3"],
+  ["audio/ogg", "ogg"],
+  ["audio/wav", "wav"],
+  ["audio/webm", "webm"],
+]);
+
+function normalizedAudioUpload(fileName: string | undefined, mediaType: string): {
+  fileName: string;
+  mediaType: string;
+} | null {
+  const safeFileName = fileName?.split(/[\\/]/).pop() || "voice-idea";
+  const extension = safeFileName.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const extensionType = extension ? audioTypeByExtension.get(extension) : undefined;
+  const cleanMediaType = mediaType.split(";")[0]?.trim().toLowerCase() ?? "";
+  let normalizedType = audioTypeAliases.get(cleanMediaType);
+
+  if (cleanMediaType === "audio/aac" && extensionType === "audio/mp4") {
+    normalizedType = "audio/mp4";
+  }
+  if (!normalizedType && cleanMediaType === "application/octet-stream") {
+    normalizedType = extensionType;
+  }
+  if (!normalizedType) return null;
+
+  const normalizedExtension =
+    extensionType === normalizedType && extension
+      ? extension
+      : audioExtensionByType.get(normalizedType);
+  if (!normalizedExtension) return null;
+
+  const stem = safeFileName.replace(/\.[a-z0-9]+$/i, "") || "voice-idea";
+  return {
+    fileName: `${stem}.${normalizedExtension}`,
+    mediaType: normalizedType,
+  };
+}
 
 const publicGamePageCsp = [
   "default-src 'none'",
@@ -80,11 +144,34 @@ function demoSceneVariants(project: ProjectWithCurrentVersion): BuilderDraft["va
   });
 }
 
+function canvasSummary(draft: BuilderDraft): string {
+  const background = draft.assets.find((asset) => asset.kind === "background");
+  const objects = draft.assets.filter((asset) => asset.kind === "object");
+  const objectSummary = objects.length > 0
+    ? objects.map((asset) => `${asset.name} near (${asset.x.toFixed(2)}, ${asset.y.toFixed(2)})`).join(", ")
+    : "no named game objects yet";
+  return `Background: ${background?.name ?? "untitled"}. Objects: ${objectSummary}.${draft.interpretation ? ` Child's behavior idea: ${draft.interpretation}` : ""}`;
+}
+
+function newBuilderDraft(creativePlan: CreativePlan): BuilderDraft {
+  return {
+    stage: "build",
+    creativePlan,
+    interpretationStatus: "pending",
+    interpretation: null,
+    assets: [],
+    variants: [],
+    selectedVariantId: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export interface AppDependencies {
   config: AppConfig;
   store?: ApplicationStore;
   database?: Database;
   generation?: GenerationService;
+  projectImages?: ProjectImageService;
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
@@ -96,6 +183,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   if (ownedDatabase && config.autoMigrate) await ownedDatabase.migrate();
   const store = dependencies.store ?? new PostgresStore(ownedDatabase!);
   const generation = dependencies.generation ?? new GenerationService(config);
+  const projectImages = dependencies.projectImages ?? new ProjectImageService(config);
   const auth = new AuthService(config, store);
 
   if (ownedDatabase && !dependencies.database) {
@@ -109,6 +197,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       callback(new Error("Origin not allowed"), false);
     },
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type"],
   });
   await app.register(multipart, {
@@ -260,6 +349,23 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     return { draft: updated.builder };
   });
 
+  app.post("/api/projects/:projectId/builder/plan", async (request) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+    requireProjectOwner(actor, project);
+    const versions = await store.getVersions(projectId);
+    const originalPrompt = versions[0]?.prompt ?? project.currentVersion.prompt;
+    const creativePlan = await generation.createCreativePlan(originalPrompt, actor.id);
+    const draft: BuilderDraft = project.builder
+      ? { ...project.builder, creativePlan, updatedAt: new Date().toISOString() }
+      : newBuilderDraft(creativePlan);
+    const updated = await store.saveBuilderDraft(projectId, draft);
+    if (!updated?.builder) throw notFound("Project not found");
+    return { draft: updated.builder };
+  });
+
   app.post("/api/projects/:projectId/builder/variants", async (request) => {
     const actor = await user(request);
     const { projectId } = projectParamsSchema.parse(request.params);
@@ -271,7 +377,31 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       Object.assign(error, { statusCode: 422 });
       throw error;
     }
-    const draft: BuilderDraft = { ...project.builder, stage: "choose_design", variants: demoSceneVariants(project), selectedVariantId: null, updatedAt: new Date().toISOString() };
+    if (!project.builder.assets.some((asset) => asset.kind === "object")) {
+      const error = new Error("Draw at least one character, object, goal, obstacle, or surprise first");
+      Object.assign(error, { statusCode: 422 });
+      throw error;
+    }
+    const generated = await projectImages.generateSceneVariants({
+      childUserId: actor.id,
+      projectPrompt: project.currentVersion.prompt,
+      canvasSummary: canvasSummary(project.builder),
+    });
+    const fallbackVariants = demoSceneVariants(project);
+    const variants = generated
+      ? generated.images.map((image, index) => ({
+          ...fallbackVariants[index]!,
+          previewDataUrl: `data:image/webp;base64,${image.toString("base64")}`,
+        }))
+      : fallbackVariants;
+    const draft: BuilderDraft = {
+      ...project.builder,
+      stage: "choose_design",
+      interpretationStatus: "ready",
+      variants,
+      selectedVariantId: null,
+      updatedAt: new Date().toISOString(),
+    };
     const updated = await store.saveBuilderDraft(projectId, draft);
     return { draft: updated?.builder };
   });
@@ -288,7 +418,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       Object.assign(error, { statusCode: 422 });
       throw error;
     }
-    const generated = await generation.createGame(`${project.currentVersion.prompt}. Use the selected visual direction: ${selected.title}.`, actor.id);
+    const builderContext = canvasSummary(project.builder);
+    const generated = await generation.createGame(
+      `${project.currentVersion.prompt}. Use the selected visual direction: ${selected.title}. Build from this child-created canvas: ${builderContext}`,
+      actor.id,
+    );
     const updatedProject = await store.addVersion({ projectId, prompt: `Test build: ${selected.title}`, html: generated.html });
     if (!updatedProject) throw notFound("Project not found");
     await store.saveBuilderDraft(projectId, { ...project.builder, stage: "ready_to_publish", updatedAt: new Date().toISOString() });
@@ -304,7 +438,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       Object.assign(error, { statusCode: 400 });
       throw error;
     }
-    if (!supportedAudioTypes.has(upload.mimetype)) {
+    const normalizedUpload = normalizedAudioUpload(upload.filename, upload.mimetype);
+    if (!normalizedUpload) {
       const error = new Error("Unsupported audio format");
       Object.assign(error, { statusCode: 415 });
       throw error;
@@ -318,8 +453,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     }
     const text = await generation.transcribeAudio({
       audio,
-      fileName: upload.filename || "voice-idea.m4a",
-      mediaType: upload.mimetype,
+      fileName: normalizedUpload.fileName,
+      mediaType: normalizedUpload.mediaType,
     });
     return { text };
   });
@@ -328,14 +463,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     const actor = await user(request);
     requireRole(actor, "child");
     const body = createProjectBodySchema.parse(request.body);
-    const generated = await generation.createGame(body.prompt, actor.id);
+    const [creativePlan, profileImage] = await Promise.all([
+      generation.createCreativePlan(body.prompt, actor.id),
+      projectImages.generate({ childUserId: actor.id, projectPrompt: body.prompt }),
+    ]);
+    if (profileImage.fallbackReason) {
+      app.log.warn(
+        { reason: profileImage.fallbackReason },
+        "Project profile image used the local fallback",
+      );
+    }
+    const workshop = createWorkshopDraft(body.prompt, creativePlan.projectTitle);
     const project = await store.createProject({
       childUserId: actor.id,
-      title: generated.title,
+      title: workshop.title,
       prompt: body.prompt,
-      html: generated.html,
+      html: validateAndHardenGameHtml(workshop.html),
+      profileImage,
     });
-    return reply.status(201).send({ project, generation: { provider: generated.provider, summary: generated.childFacingSummary } });
+    const projectWithPlan = await store.saveBuilderDraft(project.id, newBuilderDraft(creativePlan));
+    if (!projectWithPlan) throw new Error("Could not save the creative plan");
+    return reply.status(201).send({ project: projectWithPlan, generation: { provider: config.openAiApiKey ? "openai" : "demo", summary: creativePlan.encouragement } });
   });
 
   app.get("/api/projects/:projectId", async (request) => {
@@ -349,6 +497,34 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       versions: await store.getVersions(project.id),
       activities: await store.getActivities(actor.id, project.id),
     };
+  });
+
+  app.get("/api/projects/:projectId/profile-image", async (request, reply) => {
+    const actor = await user(request);
+    const { projectId } = projectParamsSchema.parse(request.params);
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound("Project not found");
+
+    const canView =
+      (actor.role === "child" && actor.id === project.childUserId) ||
+      (actor.role === "guardian" &&
+        (await store.isGuardianLinked(actor.id, project.childUserId)));
+    if (!canView) {
+      const error = new Error("You do not have access to this project");
+      Object.assign(error, { statusCode: 403 });
+      throw error;
+    }
+
+    const image = await store.getProjectProfileImage(projectId);
+    if (!image) throw notFound("Project profile image not found");
+    return reply
+      .header("Cache-Control", "private, max-age=3600")
+      .header("Content-Disposition", "inline")
+      .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+      .header("ETag", `"${image.id}"`)
+      .header("X-Content-Type-Options", "nosniff")
+      .type(image.mimeType)
+      .send(image.data);
   });
 
   app.post("/api/projects/:projectId/edits", async (request, reply) => {

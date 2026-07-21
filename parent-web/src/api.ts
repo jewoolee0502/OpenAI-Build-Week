@@ -14,6 +14,10 @@ export function publicGameUrl(slug: string): string {
   return `${apiBaseUrl}/g/${encodeURIComponent(slug)}`;
 }
 
+export function backendAssetUrl(path: string): string {
+  return `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

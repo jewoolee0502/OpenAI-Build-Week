@@ -6,14 +6,16 @@ import { colors, radii, spacing } from '@/theme';
 
 interface BrandHeaderProps {
   onBack?: () => void;
+  home?: boolean;
 }
 
 export const BrandHeader = memo(function BrandHeader({
   onBack,
+  home = false,
 }: BrandHeaderProps) {
   return (
-    <View style={styles.header}>
-      <View style={styles.brand}>
+    <View style={[styles.header, home ? styles.homeHeader : null]}>
+      <View style={[styles.brand, home ? styles.homeBrand : null]}>
         <LinearGradient colors={[colors.lavender, colors.coral]} style={styles.logo}>
           <Text style={styles.logoText}>✦</Text>
         </LinearGradient>
@@ -44,14 +46,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.ink,
   },
+  homeHeader: {
+    minHeight: 82,
+    justifyContent: 'center',
+    paddingTop: 16,
+  },
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
+  homeBrand: {
+    gap: 12,
+  },
   logo: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: radii.small,
     alignItems: 'center',
     justifyContent: 'center',
@@ -63,7 +73,7 @@ const styles = StyleSheet.create({
   },
   brandText: {
     color: colors.white,
-    fontSize: 21,
+    fontSize: 24,
     fontWeight: '900',
     letterSpacing: -0.7,
   },
