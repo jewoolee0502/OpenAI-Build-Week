@@ -20,6 +20,10 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="new-project" />
             <Stack.Screen name="studio/[projectId]" />
+            <Stack.Screen
+              name="play/[projectId]"
+              options={{ animation: 'fade', gestureEnabled: false }}
+            />
             <Stack.Screen name="builder/[projectId]" />
           </Stack>
           <StatusBar style="light" />

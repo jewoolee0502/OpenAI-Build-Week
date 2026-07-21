@@ -130,13 +130,14 @@ The hexagon represents **evidence observed across the child's available projects
 of the child's ability. It must not display percentages, grades, peer benchmarks, or an overall
 score.
 
-Use the `0–4` evidence-state rubric:
+Use the `0–10` evidence-depth rubric. This is not an ability score; it describes how much supporting
+evidence is available in the current portfolio:
 
-- `Emerging` — an initial supported signal.
-- `Demonstrated` — clear supporting evidence is available.
-- `Repeated` — the evidence recurs.
-- `Sustained` — the evidence recurs across a broader body of work.
-- `Not enough evidence` — no supported conclusion yet.
+- `0–1 · Not enough evidence` — no supported conclusion yet.
+- `2–3 · Emerging` — an initial supported signal.
+- `4–5 · Demonstrated` — clear supporting evidence is available.
+- `6–8 · Repeated` — the evidence recurs.
+- `9–10 · Sustained` — the evidence recurs across a broader body of work.
 
 Selecting a dimension opens an evidence panel containing:
 

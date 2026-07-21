@@ -7,16 +7,17 @@ import { colors, radii } from '@/theme';
 interface GamePreviewProps {
   html: string;
   height?: number;
+  fullScreen?: boolean;
 }
 
-export const GamePreview = memo(function GamePreview({ html, height = 500 }: GamePreviewProps) {
+export const GamePreview = memo(function GamePreview({ html, height = 500, fullScreen = false }: GamePreviewProps) {
   const allowNavigation = useCallback((request: WebViewNavigation) => {
     return request.url === 'about:blank' || request.url.startsWith('about:blank#');
   }, []);
 
   if (Platform.OS === 'web') {
     return (
-      <View style={[styles.frame, styles.webPlaceholder, { height }]}>
+      <View style={[styles.frame, styles.webPlaceholder, fullScreen ? styles.fullScreenFrame : { height }]}>
         <Text style={styles.webPlaceholderSymbol}>▷</Text>
         <Text style={styles.webPlaceholderTitle}>Open this project in Expo Go to playtest</Text>
         <Text style={styles.webPlaceholderBody}>
@@ -27,7 +28,7 @@ export const GamePreview = memo(function GamePreview({ html, height = 500 }: Gam
   }
 
   return (
-    <View style={[styles.frame, { height }]}>
+    <View style={[styles.frame, fullScreen ? styles.fullScreenFrame : { height }]}>
       <WebView
         source={{ html }}
         originWhitelist={['about:blank']}
@@ -61,6 +62,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFFFFF20',
     backgroundColor: colors.surface,
+  },
+  fullScreenFrame: {
+    flex: 1,
+    borderWidth: 0,
+    borderRadius: 0,
   },
   webView: {
     flex: 1,

@@ -8,11 +8,11 @@ import {
 } from 'expo-audio';
 import { deleteAsync } from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage, type ImageSource } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
-  type ImageSourcePropType,
   Pressable,
   StyleSheet,
   Text,
@@ -29,7 +29,7 @@ interface HoldToTalkButtonProps {
   onTranscript: (text: string) => void | Promise<void>;
   transcribeAudio: (uri: string) => Promise<string>;
   variant?: 'default' | 'hero' | 'milo';
-  imageSource?: ImageSourcePropType;
+  imageSource?: ImageSource | number | string;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -172,25 +172,37 @@ export const HoldToTalkButton = memo(function HoldToTalkButton({
   if (variant === 'milo') {
     return (
       <View style={[styles.miloWrapper, style]}>
-        <Pressable
-          accessibilityHint="Keep holding Milo while you speak. Release to add the words to your idea."
-          accessibilityLabel={isRecording ? 'Release Milo to finish voice idea' : 'Hold Milo to speak your idea'}
-          accessibilityRole="button"
-          accessibilityState={{ busy: isBusy }}
-          disabled={isTranscribing || isSubmitting}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          style={({ pressed }) => [
-            styles.miloButton,
-            isRecording || isPreparing ? styles.miloButtonRecording : null,
-            isTranscribing || isSubmitting ? styles.miloButtonBusy : null,
-            pressed && phase === 'idle' ? styles.miloButtonPressed : null,
-          ]}>
-          {isTranscribing || isSubmitting ? <ActivityIndicator color={colors.white} size="large" /> : null}
-          {!isTranscribing && !isSubmitting && (isPreparing || isRecording) ? <MaterialCommunityIcons color={colors.white} name="microphone" size={54} /> : null}
-          {!isBusy && !isRecording && imageSource ? <Image source={imageSource} style={styles.miloImage} /> : null}
-          {!isBusy && !isRecording && !imageSource ? <Text style={styles.miloFallback}>✦</Text> : null}
-        </Pressable>
+        <LinearGradient
+          colors={isRecording || isPreparing ? ['#FFB26F', '#FF6F61', '#D950AF'] : ['#73E1C5', '#8763EF', '#FF9A72']}
+          end={{ x: 1, y: 1 }}
+          start={{ x: 0, y: 0 }}
+          style={[styles.miloHalo, isRecording || isPreparing ? styles.miloHaloRecording : null]}>
+          <Pressable
+            accessibilityHint="Keep holding Milo while you speak. Release to add the words to your idea."
+            accessibilityLabel={isRecording ? 'Release Milo to finish voice idea' : 'Hold Milo to speak your idea'}
+            accessibilityRole="button"
+            accessibilityState={{ busy: isBusy }}
+            disabled={isTranscribing || isSubmitting}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            style={({ pressed }) => [
+              styles.miloButton,
+              isRecording || isPreparing ? styles.miloButtonRecording : null,
+              isTranscribing || isSubmitting ? styles.miloButtonBusy : null,
+              pressed && phase === 'idle' ? styles.miloButtonPressed : null,
+            ]}>
+            {isTranscribing || isSubmitting ? <ActivityIndicator color={colors.white} size="large" /> : null}
+            {!isTranscribing && !isSubmitting && (isPreparing || isRecording) ? (
+              <View style={styles.listeningIcon}>
+                <MaterialCommunityIcons color={colors.white} name="microphone" size={50} />
+              </View>
+            ) : null}
+            {!isBusy && !isRecording && imageSource ? (
+              <ExpoImage contentFit="contain" source={imageSource} style={styles.miloImage} transition={160} />
+            ) : null}
+            {!isBusy && !isRecording && !imageSource ? <Text style={styles.miloFallback}>✦</Text> : null}
+          </Pressable>
+        </LinearGradient>
         <View style={[styles.miloBubble, isRecording ? styles.miloBubbleRecording : null]}>
           <Text numberOfLines={1} style={styles.miloBubbleText}>{miloVoiceLabel(phase, seconds)}</Text>
         </View>
@@ -254,7 +266,11 @@ function miloVoiceLabel(phase: VoicePhase, seconds: number): string {
 }
 
 function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : 'Voice input did not work. Please try again.';
+  if (!(error instanceof Error)) return 'Voice input did not work. Hold Milo to try again.';
+  if (error.message.includes('Could not reach ImagineLab')) {
+    return 'Milo cannot reach the lab right now. Check the backend, then hold to try again.';
+  }
+  return error.message;
 }
 
 const styles = StyleSheet.create({
@@ -316,38 +332,57 @@ const styles = StyleSheet.create({
   miloWrapper: {
     alignItems: 'center',
   },
+  miloHalo: {
+    width: 156,
+    height: 156,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 78,
+    padding: 5,
+    shadowColor: '#4A2A72',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  miloHaloRecording: {
+    transform: [{ scale: 1.04 }],
+  },
   miloButton: {
     zIndex: 2,
-    width: 136,
-    height: 136,
+    width: 146,
+    height: 146,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: colors.white,
-    borderRadius: 68,
+    borderRadius: 73,
     backgroundColor: '#6A4FE0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 13,
-    elevation: 9,
   },
   miloButtonRecording: {
     borderColor: '#FFF1C7',
     backgroundColor: colors.coral,
-    transform: [{ scale: 1.06 }],
   },
   miloButtonBusy: {
     backgroundColor: '#6D3CE7',
   },
   miloButtonPressed: {
-    transform: [{ scale: 0.96 }],
+    transform: [{ scale: 0.95 }],
   },
   miloImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
+    width: 140,
+    height: 140,
+  },
+  listeningIcon: {
+    width: 90,
+    height: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF55',
+    borderRadius: 45,
+    backgroundColor: '#FFFFFF17',
   },
   miloFallback: {
     color: '#FFF3A8',
@@ -356,23 +391,24 @@ const styles = StyleSheet.create({
   },
   miloBubble: {
     zIndex: 3,
-    minWidth: 154,
-    marginTop: -10,
+    minWidth: 184,
+    marginTop: -12,
     alignItems: 'center',
     borderWidth: 3,
     borderColor: colors.white,
-    borderRadius: 19,
+    borderRadius: 20,
     backgroundColor: '#6E35DB',
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   miloBubbleRecording: {
     backgroundColor: '#D95258',
   },
   miloBubbleText: {
     color: colors.white,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '900',
+    letterSpacing: -0.25,
   },
   miloError: {
     maxWidth: 240,

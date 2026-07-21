@@ -71,7 +71,7 @@ export type CreativeDimensionKey =
 
 export interface CreativeDimensionValue {
   key: CreativeDimensionKey;
-  level: 0 | 1 | 2 | 3 | 4;
+  level: number;
   label: 'Not enough evidence' | 'Emerging' | 'Demonstrated' | 'Repeated' | 'Sustained';
   observation: string;
   evidence: string[];
@@ -93,7 +93,7 @@ export interface ChildInsight {
   conversationStarters: string[];
   disclaimer: string;
   radar: {
-    rubricVersion: 'creative-practice-v1';
+    rubricVersion: 'creative-practice-v2';
     dimensions: [
       CreativeDimensionValue,
       CreativeDimensionValue,

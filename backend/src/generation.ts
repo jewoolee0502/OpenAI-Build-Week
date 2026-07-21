@@ -5,9 +5,13 @@ import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { createDemoGame } from "./demo-game.js";
 import {
+  type CreativeDimensionKey,
   type CreativePlan,
   type ProjectInsightContent,
   type ProjectVersion,
+  evidenceLabelForLevel,
+  evidenceLevelSchema,
+  insightDimensionSchema,
   projectInsightSchema,
 } from "./domain.js";
 import { validateAndHardenGameHtml } from "./safety.js";
@@ -40,6 +44,160 @@ const creativePlanResponseSchema = z.object({
   encouragement: z.string().min(1).max(240),
 });
 
+const generatedRadarDimensionSchema = z.object({
+  level: evidenceLevelSchema,
+  observation: z.string().min(1).max(500),
+  evidence: z.array(z.string().min(1).max(240)).min(1).max(3),
+});
+
+export const projectInsightResponseSchema = z.object({
+  summary: z.string().min(1).max(800),
+  dimensions: z.array(insightDimensionSchema).min(2).max(5),
+  interests: z.array(z.string().min(1).max(80)).max(5),
+  conversationStarters: z.array(z.string().min(1).max(240)).min(2).max(4),
+  disclaimer: z.string().min(1).max(400),
+  radar: z.object({
+    imagination: generatedRadarDimensionSchema,
+    expression: generatedRadarDimensionSchema,
+    game_design: generatedRadarDimensionSchema,
+    experimentation: generatedRadarDimensionSchema,
+    iteration: generatedRadarDimensionSchema,
+    reflection: generatedRadarDimensionSchema,
+  }),
+});
+
+const creativeDimensionOrder = [
+  "imagination",
+  "expression",
+  "game_design",
+  "experimentation",
+  "iteration",
+  "reflection",
+] as const satisfies readonly CreativeDimensionKey[];
+
+export function normalizeGeneratedInsight(
+  generated: z.infer<typeof projectInsightResponseSchema>,
+): ProjectInsightContent {
+  return projectInsightSchema.parse({
+    ...generated,
+    radar: {
+      rubricVersion: "creative-practice-v2",
+      dimensions: creativeDimensionOrder.map((key) => ({
+        key,
+        ...generated.radar[key],
+        label: evidenceLabelForLevel(generated.radar[key].level),
+      })),
+    },
+  });
+}
+
+export function applyPortfolioEvidenceDepthFloor(
+  insight: ProjectInsightContent,
+  projects: InsightProject[],
+): ProjectInsightContent {
+  const promptRecords = projects.flatMap((project) =>
+    project.versions.map((version) => ({ prompt: version.prompt.trim(), version })),
+  );
+  const laterPrompts = promptRecords.filter(({ version }) => version.versionNumber > 1);
+  const detailedPrompts = promptRecords.filter(({ prompt }) => prompt.length >= 80);
+  const mechanicPrompts = promptRecords.filter(({ prompt }) =>
+    /\b(player|tap|collect|avoid|score|combo|round|rule|goal|lives|hearts|sequence|memory|choice|hint|timer|restart|win)\b/i.test(
+      prompt,
+    ),
+  );
+  const experimentPrompts = laterPrompts.filter(({ prompt }) =>
+    /\b(test|tested|try|tried|experiment|too fast|too hard|easier|clearer|slower|changed?)\b/i.test(
+      prompt,
+    ),
+  );
+  const reflectionPrompts = laterPrompts.filter(({ prompt }) =>
+    /\b(after playing|noticed|learned|worked|because|I think|I want to keep|proud|felt)\b/i.test(
+      prompt,
+    ),
+  );
+  const floors: Record<CreativeDimensionKey, number> = {
+    imagination: projects.length >= 4 ? 7 : projects.length >= 2 ? 5 : 0,
+    expression: detailedPrompts.length >= 4 ? 7 : detailedPrompts.length >= 2 ? 6 : 0,
+    game_design: mechanicPrompts.length >= 4 ? 7 : mechanicPrompts.length >= 2 ? 6 : 0,
+    experimentation: experimentPrompts.length >= 3 ? 7 : experimentPrompts.length >= 2 ? 6 : 0,
+    iteration: laterPrompts.length >= 6 ? 8 : laterPrompts.length >= 3 ? 7 : 0,
+    reflection: reflectionPrompts.length >= 3 ? 7 : reflectionPrompts.length >= 2 ? 6 : 0,
+  };
+
+  return projectInsightSchema.parse({
+    ...insight,
+    radar: {
+      ...insight.radar,
+      dimensions: insight.radar.dimensions.map((dimension) => {
+        const level = Math.max(dimension.level, floors[dimension.key]);
+        return { ...dimension, level, label: evidenceLabelForLevel(level) };
+      }),
+    },
+  });
+}
+
+const portfolioInterestCategoryRules = [
+  {
+    label: "Magical worlds & adventures",
+    pattern: /\b(adventure|world|kingdom|magic|magical|fantasy|wish|moonlight|rainbow|castle)\b/i,
+  },
+  {
+    label: "Animal heroes & companions",
+    pattern: /\b(animal|bird|bunny|cat|dog|fox|penguin|monkey|whale|crocodile)\b/i,
+  },
+  {
+    label: "Memory, patterns & puzzles",
+    pattern: /\b(puzzle|memory|sequence|pattern|riddle|solve|choice|strategy|challenge)\b/i,
+  },
+  {
+    label: "Playful sports & movement",
+    pattern: /\b(golf|soccer|football|basketball|sport|ball|race|jump|run|movement)\b/i,
+  },
+  {
+    label: "Kindness, feelings & friendship",
+    pattern: /\b(happy|kind|kindness|help|friend|family|feeling|emotion|care|listen|heard|together)\b/i,
+  },
+  {
+    label: "Music, rhythm & sound",
+    pattern: /\b(music|song|sound|note|rhythm|voice|hear|whisper)\b/i,
+  },
+] as const;
+
+export function derivePortfolioInterestCategories(projects: InsightProject[]): string[] {
+  const matches = portfolioInterestCategoryRules
+    .map((rule, order) => ({
+      label: rule.label,
+      order,
+      projectCount: projects.filter((project) => {
+        const evidence = [project.title, ...project.versions.map((version) => version.prompt)].join(" ");
+        return rule.pattern.test(evidence);
+      }).length,
+    }))
+    .filter(({ projectCount }) => projectCount > 0)
+    .sort((left, right) => right.projectCount - left.projectCount || left.order - right.order)
+    .slice(0, 5)
+    .map(({ label }) => label);
+
+  return matches.length > 0 ? matches : ["Game creation & interactive play"];
+}
+
+export function refinePortfolioInterests(
+  insight: ProjectInsightContent,
+  projects: InsightProject[],
+): ProjectInsightContent {
+  const projectTitles = new Set(projects.map((project) => project.title.trim().toLocaleLowerCase()));
+  const modelCategories = insight.interests.filter(
+    (interest) => !projectTitles.has(interest.trim().toLocaleLowerCase()),
+  );
+  const interests = [...modelCategories, ...derivePortfolioInterestCategories(projects)]
+    .filter((interest, index, all) =>
+      all.findIndex((candidate) => candidate.toLocaleLowerCase() === interest.toLocaleLowerCase()) === index,
+    )
+    .slice(0, 5);
+
+  return projectInsightSchema.parse({ ...insight, interests });
+}
+
 const creativePlanSystemPrompt = `You are a playful creative partner helping an elementary-aged child invent a small touch-friendly game.
 Turn the child's idea into drawing invitations, not a finished design and not a list of commands.
 First describe two or three meaningfully different ways the idea could play. Keep every direction connected to the child's words.
@@ -65,7 +223,7 @@ Analyze only the supplied project prompts and version history. Use tentative lan
 Never score, rank, diagnose, compare with other children, predict a career, or claim a fixed trait or ability.
 Each observation must cite concrete evidence from the project history.
 Focus on creative exploration, iteration, problem solving, systems thinking, follow-through, communication, and recurring interests when supported.
-Return all six creative-practice radar dimensions in the required order. A level is an evidence state, not an ability score: 0 Not enough evidence, 1 Emerging, 2 Demonstrated, 3 Repeated, 4 Sustained. The label must match the level. Use 0 when the history does not support a dimension instead of inventing evidence.
+Return all six named creative-practice radar dimensions. A level is an integer evidence-depth state from 0 to 10, never an ability score: 0–1 Not enough evidence, 2–3 Emerging, 4–5 Demonstrated, 6–8 Repeated, and 9–10 Sustained. Use 0 when the history does not support a dimension instead of inventing evidence.
 Conversation starters should help the parent invite the child to explain their choices without testing or judging them.
 The disclaimer must say this is a project-based observation, not a psychological or educational assessment.`;
 
@@ -76,11 +234,12 @@ Never score, grade, rank, diagnose, compare with other children, predict a caree
 Do not credit the child for implementation produced by AI. Treat only the child's prompts, edits, and recorded process as evidence of the child's choices.
 Every observation must cite concrete evidence and name the project it came from. Distinguish a repeated cross-project pattern from a one-project example.
 Focus on creative exploration, expression, game design choices, experimentation, iteration, reflection, and recurring interests when supported.
-Return all six creative-practice radar dimensions in the required order. A level is an evidence state, not an ability score: 0 Not enough evidence, 1 Emerging, 2 Demonstrated, 3 Repeated, 4 Sustained. The label must match the level. Use 0 when the portfolio does not support a dimension instead of inventing evidence.
+Return "interests" as concise, evidence-specific subjects or themes the child appears drawn to, such as "Animal heroes & companions", "Magical worlds & adventures", "Playful sports & movement", "Music, rhythm & sound", or "Memory, patterns & puzzles". Do not return generic umbrella labels such as "Creativity" or "Games", and never use a project title as an interest.
+Return all six named creative-practice radar dimensions. A level is an integer evidence-depth state from 0 to 10, never an ability score: 0–1 Not enough evidence, 2–3 Emerging, 4–5 Demonstrated, 6–8 Repeated, and 9–10 Sustained. Use 0 when the portfolio does not support a dimension instead of inventing evidence.
 Conversation starters should help the parent invite the child to explain choices across their games without testing or judging them.
 The disclaimer must say this is a portfolio-based observation of available creative work, not a psychological, educational, or skills assessment.`;
 
-interface InsightProject {
+export interface InsightProject {
   id: string;
   title: string;
   versions: ProjectVersion[];
@@ -184,20 +343,21 @@ export class GenerationService {
     const history = input.versions
       .map((version) => `Version ${version.versionNumber}: ${version.prompt}`)
       .join("\n");
-    return this.requestStructured(
-      projectInsightSchema,
+    const generated = await this.requestStructured(
+      projectInsightResponseSchema,
       "project_insight",
       insightSystemPrompt,
       `Project title: ${input.title}\nProject history:\n${history}`,
       input.childUserId,
     );
+    return normalizeGeneratedInsight(generated);
   }
 
   public async createChildInsight(input: {
     childUserId: string;
     projects: InsightProject[];
   }): Promise<ProjectInsightContent> {
-    if (!this.client) return this.demoChildInsight(input.projects);
+    if (!this.client) return refinePortfolioInterests(this.demoChildInsight(input.projects), input.projects);
 
     const portfolioHistory = input.projects
       .map((project) => {
@@ -207,12 +367,16 @@ export class GenerationService {
         return `Project: ${project.title}\n${history}`;
       })
       .join("\n\n");
-    return this.requestStructured(
-      projectInsightSchema,
+    const generated = await this.requestStructured(
+      projectInsightResponseSchema,
       "child_portfolio_insight",
       childInsightSystemPrompt,
       `Analyze this child's complete available portfolio (${input.projects.length} projects).\n\n${portfolioHistory}`,
       input.childUserId,
+    );
+    return refinePortfolioInterests(
+      applyPortfolioEvidenceDepthFloor(normalizeGeneratedInsight(generated), input.projects),
+      input.projects,
     );
   }
 
@@ -292,29 +456,29 @@ export class GenerationService {
       disclaimer:
         "This is a project-based observation intended to support conversation. It is not a psychological, educational, or skills assessment.",
       radar: {
-        rubricVersion: "creative-practice-v1",
+        rubricVersion: "creative-practice-v2",
         dimensions: [
           radarDimension(
             "imagination",
-            2,
+            5,
             "The child turned an original idea into a playable world in this project.",
             `The project began with: “${prompts[0] ?? title}”`,
           ),
           radarDimension(
             "expression",
-            1,
+            2,
             "The initial request communicates a theme and desired experience.",
             `The child described: “${prompts[0] ?? title}”`,
           ),
           radarDimension(
             "game_design",
-            1,
+            2,
             "The request includes an interactive goal that can guide a player.",
             `The game request was: “${prompts[0] ?? title}”`,
           ),
           radarDimension(
             "experimentation",
-            versions.length > 1 ? 2 : 0,
+            versions.length > 1 ? 5 : 0,
             versions.length > 1
               ? "The child tried at least one alternative through a later version."
               : "There is not yet enough project evidence about trying alternatives.",
@@ -324,7 +488,7 @@ export class GenerationService {
           ),
           radarDimension(
             "iteration",
-            versions.length > 2 ? 3 : versions.length > 1 ? 2 : 0,
+            versions.length > 2 ? 7 : versions.length > 1 ? 5 : 0,
             versions.length > 1
               ? "The child returned to change the game after its first version."
               : "There is not yet enough project evidence about iteration.",
@@ -345,6 +509,30 @@ export class GenerationService {
     const totalVersions = projects.reduce((total, project) => total + project.versions.length, 0);
     const revisedProjects = projects.filter((project) => project.versions.length > 1);
     const projectCount = projects.length;
+    const promptRecords = projects.flatMap((project) =>
+      project.versions.map((version) => ({
+        project,
+        version,
+        prompt: version.prompt.trim(),
+      })),
+    );
+    const laterPromptRecords = promptRecords.filter(({ version }) => version.versionNumber > 1);
+    const detailedPromptRecords = promptRecords.filter(({ prompt }) => prompt.length >= 80);
+    const mechanicPromptRecords = promptRecords.filter(({ prompt }) =>
+      /\b(player|tap|collect|avoid|score|combo|round|rule|goal|lives|hearts|sequence|memory|choice|hint|timer|restart|win)\b/i.test(
+        prompt,
+      ),
+    );
+    const experimentPromptRecords = laterPromptRecords.filter(({ prompt }) =>
+      /\b(test|tested|try|tried|experiment|too fast|too hard|easier|clearer|slower|changed?)\b/i.test(
+        prompt,
+      ),
+    );
+    const reflectionPromptRecords = laterPromptRecords.filter(({ prompt }) =>
+      /\b(after playing|noticed|learned|worked|because|I think|I want to keep|proud|felt)\b/i.test(
+        prompt,
+      ),
+    );
     const firstProject = projects[0];
     const secondProject = projects[1];
     const firstPrompt = firstProject?.versions[0]?.prompt ?? firstProject?.title ?? "No project evidence";
@@ -382,8 +570,22 @@ export class GenerationService {
               : `${totalVersions} saved version${totalVersions === 1 ? " is" : "s are"} available across the portfolio.`,
           ],
         },
+        ...(reflectionPromptRecords.length > 0
+          ? [
+              {
+                name: "Playtesting and reflection",
+                observation:
+                  "Later prompts describe what happened during play and connect those observations to specific changes.",
+                evidence: reflectionPromptRecords
+                  .slice(0, 2)
+                  .map(({ project, version, prompt }) =>
+                    shortEvidence(`${project.title}, Version ${version.versionNumber}: “${prompt}”`, 230),
+                  ),
+              },
+            ]
+          : []),
       ],
-      interests: projects.slice(0, 5).map((project) => project.title.slice(0, 80)),
+      interests: derivePortfolioInterestCategories(projects),
       conversationStarters: [
         "Which idea from all of your games would you most like to explore again, and why?",
         "What is one choice you made differently in two of your games?",
@@ -392,11 +594,11 @@ export class GenerationService {
       disclaimer:
         "This is a portfolio-based observation of the creative work currently available. It is not a psychological, educational, or skills assessment.",
       radar: {
-        rubricVersion: "creative-practice-v1",
+        rubricVersion: "creative-practice-v2",
         dimensions: [
           radarDimension(
             "imagination",
-            projectCount > 2 ? 3 : 2,
+            projectCount > 2 ? 7 : 5,
             projectCount > 1
               ? "Multiple projects provide repeated evidence of turning different themes into playable premises."
               : "One project provides evidence of turning a theme into a playable premise.",
@@ -404,33 +606,52 @@ export class GenerationService {
           ),
           radarDimension(
             "expression",
-            projectCount > 1 ? 2 : 1,
-            "The prompts communicate themes, characters, or experiences the child wants the games to include.",
-            `A child-authored prompt says: “${shortEvidence(firstPrompt)}”`,
+            detailedPromptRecords.length >= 3 ? 8 : detailedPromptRecords.length > 0 ? 6 : projectCount > 1 ? 5 : 2,
+            detailedPromptRecords.length > 0
+              ? "Several prompts explain characters, mood, player experience, and reasons for requested changes in concrete language."
+              : "The prompts communicate themes, characters, or experiences the child wants the games to include.",
+            detailedPromptRecords.length > 0
+              ? shortEvidence(
+                  `${detailedPromptRecords[0]!.project.title}, Version ${detailedPromptRecords[0]!.version.versionNumber}: “${detailedPromptRecords[0]!.prompt}”`,
+                  230,
+                )
+              : `A child-authored prompt says: “${shortEvidence(firstPrompt)}”`,
           ),
           radarDimension(
             "game_design",
-            projectCount > 1 ? 3 : 2,
-            projectCount > 1
-              ? "More than one project prompt describes a player goal or interactive rule."
-              : "The available prompt describes a playable goal or interaction.",
-            projectEvidence(firstProject, "No project is available."),
+            mechanicPromptRecords.length >= 3 ? 8 : mechanicPromptRecords.length > 0 ? 6 : projectCount > 1 ? 5 : 2,
+            mechanicPromptRecords.length >= 3
+              ? "Repeated prompts describe player goals, hazards, feedback, progression, and rules across saved versions."
+              : mechanicPromptRecords.length > 0
+                ? "At least one prompt describes a concrete player goal or interactive rule."
+                : "The available prompts name playable themes but provide limited evidence about their rules.",
+            mechanicPromptRecords.length > 0
+              ? shortEvidence(
+                  `${mechanicPromptRecords[0]!.project.title}, Version ${mechanicPromptRecords[0]!.version.versionNumber}: “${mechanicPromptRecords[0]!.prompt}”`,
+                  230,
+                )
+              : projectEvidence(firstProject, "No project is available."),
           ),
           radarDimension(
             "experimentation",
-            revisedProjects.length > 0 ? 2 : 0,
-            revisedProjects.length > 0
-              ? "A later saved prompt provides evidence of trying a change within an existing game."
-              : "Different projects alone do not show whether alternatives were tested within a game.",
-            revisedProjects.length > 0
-              ? `${revisedProjects[0]!.title} contains ${revisedProjects[0]!.versions.length} saved versions.`
-              : "No project has a later saved version yet.",
+            experimentPromptRecords.length >= 2 ? 7 : experimentPromptRecords.length === 1 ? 5 : 0,
+            experimentPromptRecords.length >= 2
+              ? "More than one later prompt records a test result and uses it to try a different interaction or pacing choice."
+              : experimentPromptRecords.length === 1
+                ? "A later prompt records a test result and a resulting change."
+                : "Different projects alone do not show whether alternatives were tested within a game.",
+            experimentPromptRecords.length > 0
+              ? shortEvidence(
+                  `${experimentPromptRecords[0]!.project.title}, Version ${experimentPromptRecords[0]!.version.versionNumber}: “${experimentPromptRecords[0]!.prompt}”`,
+                  230,
+                )
+              : "No later prompt describes a test result yet.",
           ),
           radarDimension(
             "iteration",
-            revisedProjects.length > 1 ? 3 : revisedProjects.length === 1 ? 2 : 0,
+            laterPromptRecords.length >= 5 ? 8 : laterPromptRecords.length >= 3 ? 7 : laterPromptRecords.length > 0 ? 5 : 0,
             revisedProjects.length > 0
-              ? "The child returned to at least one project with a new change request."
+              ? "The child returned to projects with multiple saved change requests, including changes connected to playtesting."
               : "There is not yet portfolio evidence of returning to revise a project.",
             revisedProjects.length > 0
               ? shortEvidence(
@@ -444,9 +665,18 @@ export class GenerationService {
           ),
           radarDimension(
             "reflection",
-            0,
-            "There is not yet enough child-authored reflection across the portfolio.",
-            "No child-authored reflection has been saved yet.",
+            reflectionPromptRecords.length >= 2 ? 7 : reflectionPromptRecords.length === 1 ? 5 : 0,
+            reflectionPromptRecords.length >= 2
+              ? "Repeated later prompts explain what the child noticed while playing and why a follow-up change could help."
+              : reflectionPromptRecords.length === 1
+                ? "One later prompt explains what the child noticed while playing and connects it to a change."
+                : "There is not yet enough child-authored reflection across the portfolio.",
+            reflectionPromptRecords.length > 0
+              ? shortEvidence(
+                  `${reflectionPromptRecords[0]!.project.title}, Version ${reflectionPromptRecords[0]!.version.versionNumber}: “${reflectionPromptRecords[0]!.prompt}”`,
+                  230,
+                )
+              : "No child-authored reflection has been saved yet.",
           ),
         ],
       },
@@ -540,32 +770,18 @@ function shortEvidence(value: string, maxLength = 170): string {
   return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
-function radarDimension<
-  Key extends
-    | "imagination"
-    | "expression"
-    | "game_design"
-    | "experimentation"
-    | "iteration"
-    | "reflection",
->(
+function radarDimension<Key extends CreativeDimensionKey>(
   key: Key,
-  level: 0 | 1 | 2 | 3 | 4,
+  level: number,
   observation: string,
   evidence: string,
-): {
-  key: Key;
-  level: 0 | 1 | 2 | 3 | 4;
-  label: "Not enough evidence" | "Emerging" | "Demonstrated" | "Repeated" | "Sustained";
-  observation: string;
-  evidence: string[];
-} {
-  const labels = [
-    "Not enough evidence",
-    "Emerging",
-    "Demonstrated",
-    "Repeated",
-    "Sustained",
-  ] as const;
-  return { key, level, label: labels[level], observation, evidence: [evidence] };
+): ProjectInsightContent["radar"]["dimensions"][number] {
+  const parsedLevel = evidenceLevelSchema.parse(level);
+  return {
+    key,
+    level: parsedLevel,
+    label: evidenceLabelForLevel(parsedLevel),
+    observation,
+    evidence: [evidence],
+  };
 }

@@ -154,15 +154,19 @@ describe('Parent Portal', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Insights' }));
 
-    expect(
-      await screen.findByRole('img', { name: /creative practice radar/i }),
-    ).toBeInTheDocument();
+    const radar = await screen.findByRole('img', { name: /creative practice radar/i });
+    expect(radar).toBeInTheDocument();
+    expect(radar.querySelectorAll('.radar-grid')).toHaveLength(5);
+    expect(radar.querySelector('.radar-profile-line')).toHaveAttribute('points');
+    expect(radar.querySelector('.radar-point.dimension-reflection')).toHaveAttribute('data-evidence-level', '0');
+    expect(radar.querySelector('.radar-point.dimension-reflection')).toHaveAttribute('data-visual-level', '2');
+    expect(screen.getByLabelText(/evidence depth scale from zero to ten/i)).toBeInTheDocument();
     expect(screen.getAllByText('Imagination').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Game Design').length).toBeGreaterThan(0);
     expect(
       screen.getByRole('button', { name: 'Reflection — Not enough evidence' }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/not an educational or psychological assessment/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/not an educational or psychological assessment/i)).toHaveLength(1);
   });
 
   it("shows one child-level insight across the portfolio without a project selector", async () => {
@@ -288,13 +292,13 @@ const insight = {
   conversationStarters: ['What would you add next?', 'Which change helped the player most?'],
   disclaimer: 'Portfolio-based observations — not an educational or psychological assessment.',
   radar: {
-    rubricVersion: 'creative-practice-v1',
+    rubricVersion: 'creative-practice-v2',
     dimensions: [
-      radarValue('imagination', 3, 'Repeated'),
-      radarValue('expression', 2, 'Demonstrated'),
-      radarValue('game_design', 2, 'Demonstrated'),
-      radarValue('experimentation', 1, 'Emerging'),
-      radarValue('iteration', 2, 'Demonstrated'),
+      radarValue('imagination', 7, 'Repeated'),
+      radarValue('expression', 5, 'Demonstrated'),
+      radarValue('game_design', 5, 'Demonstrated'),
+      radarValue('experimentation', 2, 'Emerging'),
+      radarValue('iteration', 5, 'Demonstrated'),
       radarValue('reflection', 0, 'Not enough evidence'),
     ],
   },

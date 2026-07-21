@@ -165,7 +165,7 @@ export const creativeDimensionKeySchema = z.enum([
 ]);
 export type CreativeDimensionKey = z.infer<typeof creativeDimensionKeySchema>;
 
-export const evidenceLevelSchema = z.number().int().min(0).max(4);
+export const evidenceLevelSchema = z.number().int().min(0).max(10);
 export const evidenceLabelSchema = z.enum([
   "Not enough evidence",
   "Emerging",
@@ -173,6 +173,15 @@ export const evidenceLabelSchema = z.enum([
   "Repeated",
   "Sustained",
 ]);
+export type EvidenceLabel = z.infer<typeof evidenceLabelSchema>;
+
+export function evidenceLabelForLevel(level: number): EvidenceLabel {
+  if (level <= 1) return "Not enough evidence";
+  if (level <= 3) return "Emerging";
+  if (level <= 5) return "Demonstrated";
+  if (level <= 8) return "Repeated";
+  return "Sustained";
+}
 
 const creativeDimensionOrder = [
   "imagination",
@@ -183,13 +192,24 @@ const creativeDimensionOrder = [
   "reflection",
 ] as const;
 
-const radarDimensionSchema = z.object({
-  key: creativeDimensionKeySchema,
-  level: evidenceLevelSchema,
-  label: evidenceLabelSchema,
-  observation: z.string().min(1).max(500),
-  evidence: z.array(z.string().min(1).max(240)).min(1).max(3),
-});
+const radarDimensionSchema = z
+  .object({
+    key: creativeDimensionKeySchema,
+    level: evidenceLevelSchema,
+    label: evidenceLabelSchema,
+    observation: z.string().min(1).max(500),
+    evidence: z.array(z.string().min(1).max(240)).min(1).max(3),
+  })
+  .superRefine((dimension, context) => {
+    const expectedLabel = evidenceLabelForLevel(dimension.level);
+    if (dimension.label !== expectedLabel) {
+      context.addIssue({
+        code: "custom",
+        path: ["label"],
+        message: `Expected ${expectedLabel} for evidence level ${dimension.level}`,
+      });
+    }
+  });
 
 const radarDimensionsSchema = z
   .array(radarDimensionSchema)
@@ -207,7 +227,7 @@ const radarDimensionsSchema = z
   });
 
 export const creativePracticeRadarSchema = z.object({
-  rubricVersion: z.literal("creative-practice-v1"),
+  rubricVersion: z.literal("creative-practice-v2"),
   dimensions: radarDimensionsSchema,
 });
 export type CreativePracticeRadar = z.infer<typeof creativePracticeRadarSchema>;

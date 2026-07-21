@@ -16,6 +16,19 @@ import './App.css';
 type PortalPage = 'portfolio' | 'activity' | 'insights';
 
 const emptyDashboard: GuardianDashboard = { projects: [], activities: [] };
+const radarGridLevels = [10, 8, 6, 4, 2] as const;
+const radarMinimumVisualLevel = 2;
+
+function radarVisualLevel(level: number): number {
+  return Math.max(radarMinimumVisualLevel, Math.min(10, level));
+}
+const evidenceScaleBands = [
+  { range: '0–1', label: 'Not enough evidence' },
+  { range: '2–3', label: 'Emerging' },
+  { range: '4–5', label: 'Demonstrated' },
+  { range: '6–8', label: 'Repeated' },
+  { range: '9–10', label: 'Sustained' },
+] as const;
 
 function App() {
   const [guardian, setGuardian] = useState<GuardianUser | null | undefined>(undefined);
@@ -883,10 +896,14 @@ function InsightDashboard({
     <div className="insight-dashboard">
       <section className="hexagon-card">
         <div className="hexagon-heading">
-          <h2>Creative Practice Hexagon</h2>
-          <p>Select a dimension to see supporting evidence.</p>
+          <h2>Creative Practice Radar</h2>
+          <p>Radius shows evidence depth across projects — not ability.</p>
         </div>
-        <CreativePracticeHexagon dimensions={insight.radar.dimensions} selectedKey={selectedKey} />
+        <CreativePracticeRadar
+          dimensions={insight.radar.dimensions}
+          onSelect={setSelectedKey}
+          selectedKey={selectedKey}
+        />
         <div className="dimension-controls hexagon-legend" aria-label="Creative-practice dimensions">
           {insight.radar.dimensions.map((dimension) => (
             <button
@@ -898,14 +915,14 @@ function InsightDashboard({
               type="button"
             >
               <span aria-hidden="true">{dimensionSymbol(dimension.key)}</span>
-              <span>{dimensionLabel(dimension.key)}<small>{dimension.label}</small></span>
+              <span>{dimensionLabel(dimension.key)}<small>Evidence {dimension.level}/10 · {dimension.label}</small></span>
             </button>
           ))}
         </div>
-        <div className="evidence-scale" aria-label={`${projectCount} project${projectCount === 1 ? '' : 's'} and zero to four evidence states`}>
-          <span><i className="scale-solid" /> Repeated evidence</span>
-          <span><i className="scale-ring" /> First signal</span>
-          <span><i className="scale-muted" /> Not enough evidence</span>
+        <div className="evidence-scale" aria-label={`${projectCount} project${projectCount === 1 ? '' : 's'} and an evidence depth scale from zero to ten; not an ability score`}>
+          {evidenceScaleBands.map((band) => (
+            <span key={band.range}><b>{band.range}</b><small>{band.label}</small></span>
+          ))}
         </div>
       </section>
       <aside className="evidence-card" aria-live="polite">
@@ -913,9 +930,9 @@ function InsightDashboard({
           <span className={`dimension-mark dimension-${selected.key}`} aria-hidden="true">{dimensionSymbol(selected.key)}</span>
           <div>
             <h2>{dimensionLabel(selected.key)}</h2>
-            <p>{selected.label} across the available portfolio</p>
+            <p>Evidence {selected.level}/10 · {selected.label} across the available portfolio</p>
           </div>
-          <span className={`level-badge level-${selected.level}`}>↻&nbsp; {selected.label}</span>
+          <span className={`level-badge level-${selected.level}`}>↻&nbsp; Evidence {selected.level}/10</span>
         </header>
         <section className="observation-copy">
           <h3>What we observed</h3>
@@ -950,63 +967,124 @@ function InsightDashboard({
       </section>
       <section className="interests-module">
         <h2><span aria-hidden="true">♡</span> Possible interests</h2>
-        <div className="interest-chips">{insight.interests.slice(0, 5).map((interest, index) => <span key={interest}><b aria-hidden="true">{['◉', '♞', '☺', '♫', '✦'][index]}</b>{interest}</span>)}</div>
-        <p>Themes that appear in the available project evidence.</p>
+        <div className="interest-chips">{insight.interests.slice(0, 5).map((interest) => <span key={interest}><b aria-hidden="true">{interestSymbol(interest)}</b>{interest}</span>)}</div>
+        <p>Specific interests suggested by recurring subjects and choices in the available projects.</p>
       </section>
       <section className="concepts-module">
         <h2><span aria-hidden="true">‹/›</span> Creative practices</h2>
         <div className="concept-chips">{insight.radar.dimensions.filter((dimension) => dimension.level > 0).slice(0, 5).map((dimension) => <span key={dimension.key}><b aria-hidden="true">{dimensionSymbol(dimension.key)}</b>{dimensionLabel(dimension.key)}</span>)}</div>
         <p>Practices supported by the current portfolio evidence.</p>
       </section>
-      <p className="insight-disclaimer">{insight.disclaimer} Generated {formatDateTime(insight.createdAt)}.</p>
       <button className="visually-hidden" disabled={refreshing} onClick={onRefresh} type="button">Refresh child insight</button>
     </div>
   );
 }
 
-function CreativePracticeHexagon({
+function CreativePracticeRadar({
   dimensions,
+  onSelect,
   selectedKey,
 }: {
   dimensions: readonly CreativeDimensionValue[];
+  onSelect: (key: CreativeDimensionKey) => void;
   selectedKey: CreativeDimensionKey;
 }) {
-  const center = 160;
-  const radius = 102;
+  const centerX = 260;
+  const centerY = 174;
+  const radius = 112;
+  const dimensionCount = dimensions.length;
   const point = (index: number, scale: number) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / 6;
-    return [center + Math.cos(angle) * radius * scale, center + Math.sin(angle) * radius * scale];
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / dimensionCount;
+    return [centerX + Math.cos(angle) * radius * scale, centerY + Math.sin(angle) * radius * scale] as const;
   };
-  const outer = dimensions.map((_dimension, index) => point(index, 1));
+  const pointsAtScale = (scale: number) => dimensions
+    .map((_dimension, index) => point(index, scale).map((coordinate) => coordinate.toFixed(2)).join(','))
+    .join(' ');
+  const profilePoints = dimensions
+    .map((dimension, index) => point(index, radarVisualLevel(dimension.level) / 10)
+      .map((coordinate) => coordinate.toFixed(2))
+      .join(','))
+    .join(' ');
+
+  const selectDimension = (event: React.KeyboardEvent<SVGGElement>, key: CreativeDimensionKey) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect(key);
+    }
+  };
 
   return (
     <svg
-      aria-labelledby="hexagon-title hexagon-description"
-      className="creative-hexagon"
+      aria-labelledby="radar-title radar-description"
+      className="creative-radar"
       role="img"
-      viewBox="0 0 320 320"
+      viewBox="0 0 520 350"
     >
-      <title id="hexagon-title">Creative practice radar hexagon across this child&apos;s portfolio</title>
-      <desc id="hexagon-description">
-        Six open evidence states. Filled sections indicate available supporting evidence, not ability.
+      <title id="radar-title">Creative practice radar across this child&apos;s portfolio</title>
+      <desc id="radar-description">
+        Six dimensions plotted on an evidence-depth scale from zero to ten. For readability, markers have a minimum visual radius of two; labels show the exact evidence value. Distance from the center shows how often supporting evidence appears, not the child&apos;s ability.
       </desc>
+      {radarGridLevels.map((level) => (
+        <polygon className={`radar-grid radar-grid-${level}`} key={level} points={pointsAtScale(level / 10)} />
+      ))}
       {dimensions.map((dimension, index) => {
-        const nextIndex = (index + 1) % 6;
-        const points = [[center, center], outer[index]!, outer[nextIndex]!]
-          .map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`)
-          .join(' ');
-        return <polygon className={`hex-segment dimension-${dimension.key} level-${dimension.level} ${selectedKey === dimension.key ? 'selected' : ''}`} key={dimension.key} points={points} />;
-      })}
-      {dimensions.map((dimension, index) => {
-        const [x, y] = point(index + 0.5, 0.6);
+        const [x, y] = point(index, 1);
         return (
-          <text className="hex-symbol" key={dimension.key} textAnchor="middle" x={x} y={y + 7}>
-            {dimensionSymbol(dimension.key)}
-          </text>
+          <line
+            className={`radar-axis ${selectedKey === dimension.key ? 'selected' : ''}`}
+            key={dimension.key}
+            x1={centerX}
+            x2={x}
+            y1={centerY}
+            y2={y}
+          />
         );
       })}
-      <polygon className="hex-center" points="160,126 189,143 189,177 160,194 131,177 131,143" />
-      <text className="hex-center-symbol" textAnchor="middle" x="160" y="172">☆</text>
+      <text className="radar-tick" x={centerX + 7} y={centerY - 5}>0</text>
+      {[2, 4, 6, 8, 10].map((level) => {
+        const [, y] = point(0, level / 10);
+        return <text className="radar-tick" key={level} x={centerX + 7} y={y + 4}>{level}</text>;
+      })}
+      <polygon className="radar-profile-fill" points={profilePoints} />
+      <polygon className="radar-profile-line" points={profilePoints} />
+      {dimensions.map((dimension, index) => {
+        const visualLevel = radarVisualLevel(dimension.level);
+        const [x, y] = point(index, visualLevel / 10);
+        return (
+          <circle
+            className={`radar-point dimension-${dimension.key} ${selectedKey === dimension.key ? 'selected' : ''}`}
+            cx={x}
+            cy={y}
+            data-evidence-level={dimension.level}
+            data-visual-level={visualLevel}
+            key={dimension.key}
+            r={selectedKey === dimension.key ? 7 : 5}
+          />
+        );
+      })}
+      <circle className="radar-center" cx={centerX} cy={centerY} r="4" />
+      {dimensions.map((dimension, index) => {
+        const [x, y] = point(index, 1.26);
+        const textAnchor = Math.abs(x - centerX) < 4 ? 'middle' : x > centerX ? 'start' : 'end';
+        const labelY = index === 0 ? y - 2 : index === 3 ? y + 10 : y + 4;
+        return (
+          <g
+            aria-label={`View ${dimensionLabel(dimension.key)} evidence, ${dimension.label}`}
+            aria-pressed={selectedKey === dimension.key}
+            className={`radar-label ${selectedKey === dimension.key ? 'selected' : ''}`}
+            key={dimension.key}
+            onClick={() => onSelect(dimension.key)}
+            onKeyDown={(event) => selectDimension(event, dimension.key)}
+            role="button"
+            tabIndex={0}
+          >
+            <text textAnchor={textAnchor} x={x} y={labelY}>
+              <tspan className="radar-label-symbol">{dimensionSymbol(dimension.key)} </tspan>
+              {dimensionLabel(dimension.key)}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -1064,6 +1142,17 @@ function dimensionSymbol(key: CreativeDimensionKey): string {
     iteration: '↻',
     reflection: '☁',
   }[key];
+}
+
+function interestSymbol(interest: string): string {
+  const normalized = interest.toLocaleLowerCase();
+  if (/animal|companion/.test(normalized)) return '❋';
+  if (/puzzle|pattern|memory/.test(normalized)) return '◇';
+  if (/sport|movement/.test(normalized)) return '◉';
+  if (/music|rhythm|sound/.test(normalized)) return '♫';
+  if (/feeling|friendship|kindness/.test(normalized)) return '♡';
+  if (/build|invent/.test(normalized)) return '✦';
+  return '◌';
 }
 
 function activityLabel(type: ActivityEvent['type']): string {
